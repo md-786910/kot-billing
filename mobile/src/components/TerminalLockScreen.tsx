@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { COLORS, RADIUS, SPACE, TOUCH, roleLabel } from '../constants/theme';
+import { COLORS, RADIUS, SPACE, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { errorMessage, errorStatus, fetchSignInStaff } from '../services/api';
 import { StaffUser } from '../types';
