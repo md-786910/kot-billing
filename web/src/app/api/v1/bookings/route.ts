@@ -8,7 +8,6 @@ import { broadcastRealtimeEvent } from '@/lib/realtime';
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req, 'data.read');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const bookings = await PrivateBookingModel.find()
@@ -24,7 +23,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req, 'booking.manage');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -63,7 +61,6 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const guard = await requireAuth(req, 'booking.manage');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();

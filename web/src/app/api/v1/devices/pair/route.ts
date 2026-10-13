@@ -4,14 +4,16 @@ import { PairingCodeModel } from '@/models/PairingCode';
 import { generateToken, sha256 } from '@/lib/auth/crypto';
 import {
   audit, clearDeviceCookie, clearSessionCookie, clientIp, getAuth, jsonError, rateLimit,
-  respondWithDevice, revokeDeviceSessions, str,
+  respondWithDevice, revokeDeviceSessions, str, serverError,
 } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 
 // Public: exchange a one-time pairing code (from Admin → Devices) for a device token
 export async function POST(req: NextRequest) {
   try {
-    if (!rateLimit(`pair:${clientIp(req)}`, 10)) return jsonError('Too many attempts. Please wait a few minutes.', 429);
+    if (!rateLimit(`pair:${clientIp(req)}`, 10) || !rateLimit('pair:all', 30)) {
+      return jsonError('Too many attempts. Please wait a few minutes.', 429);
+    }
     await connectToDatabase();
 
     const code = str((await req.json()).code, 6);
@@ -21,7 +23,7 @@ export async function POST(req: NextRequest) {
     const pairing = await PairingCodeModel.findOneAndUpdate(
       { codeHash: sha256(code), usedAt: null, expiresAt: { $gt: new Date() } },
       { usedAt: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!pairing) return jsonError('Code is invalid or has expired', 401);
 
@@ -41,8 +43,8 @@ export async function POST(req: NextRequest) {
       { pairedBy: pairing.createdBy }
     );
     return respondWithDevice(req, data, token);
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }
 
@@ -59,7 +61,7 @@ export async function DELETE(req: NextRequest) {
     clearDeviceCookie(res);
     clearSessionCookie(res);
     return res;
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

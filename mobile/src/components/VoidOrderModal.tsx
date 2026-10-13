@@ -36,15 +36,28 @@ export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { voidOrder } = usePOS();
+  const { voidOrder, can, markActivity } = usePOS();
   const [selectedReason, setSelectedReason] = useState<string>(VOID_REASONS[0]);
   const [pin, setPin] = useState<string>('');
   const [isVoiding, setIsVoiding] = useState<boolean>(false);
 
+  // Staff without void rights need a manager to approve on this phone
+  const needsManagerPin = !can('order.void');
+
+  const close = () => {
+    setPin('');
+    onClose();
+  };
+
   const handleExecute = async () => {
+    if (needsManagerPin && !/^\d{4,6}$/.test(pin)) {
+      Alert.alert('Manager PIN required', 'Ask a manager to enter their PIN to approve this void.');
+      return;
+    }
     setIsVoiding(true);
-    const res = await voidOrder(orderId, tableName, selectedReason, pin.trim() || undefined);
+    const res = await voidOrder(orderId, tableName, selectedReason, needsManagerPin ? pin : undefined);
     setIsVoiding(false);
+    setPin('');
 
     if (res.success) {
       Alert.alert(
@@ -53,21 +66,25 @@ export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
       );
       onSuccess();
       onClose();
+    } else if (res.status === 409) {
+      Alert.alert('Bill already closed', res.error || 'This bill is already closed.');
+      onSuccess();
+      onClose();
     } else {
       Alert.alert('Void Failed', res.error || 'Failed to void order.');
     }
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
+      <View style={styles.modalOverlay} onTouchStart={markActivity}>
         <View style={styles.modalCard}>
           <View style={styles.headerRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <MaterialCommunityIcons name="cancel" size={22} color="#ef4444" />
               <Text style={styles.modalTitle}>Cancel Order / Walkout</Text>
             </View>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={close} style={styles.closeBtn} accessibilityLabel="Close">
               <Feather name="x" size={20} color={COLORS.textMuted} />
             </TouchableOpacity>
           </View>
@@ -101,20 +118,24 @@ export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
             ))}
           </View>
 
-          <Text style={styles.fieldLabel}>Manager / Supervisor PIN (Optional):</Text>
-          <TextInput
-            style={styles.pinInput}
-            value={pin}
-            onChangeText={setPin}
-            placeholder="4-digit PIN (e.g. 1111)"
-            placeholderTextColor={COLORS.textMuted}
-            keyboardType="numeric"
-            maxLength={4}
-            secureTextEntry
-          />
+          {needsManagerPin ? (
+            <>
+              <Text style={styles.fieldLabel}>Manager PIN (required)</Text>
+              <TextInput
+                style={styles.pinInput}
+                value={pin}
+                onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Manager PIN"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="number-pad"
+                maxLength={6}
+                secureTextEntry
+              />
+            </>
+          ) : null}
 
           <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={isVoiding}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={close} disabled={isVoiding}>
               <Text style={styles.cancelText}>Keep Order</Text>
             </TouchableOpacity>
 
@@ -170,12 +191,12 @@ const styles = StyleSheet.create({
   },
   warningText: {
     color: '#fca5a5',
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   fieldLabel: {
     color: COLORS.textSecondary,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     marginBottom: 6,
   },
@@ -185,7 +206,10 @@ const styles = StyleSheet.create({
   },
   reasonChip: {
     backgroundColor: COLORS.bgSurface,
-    padding: 10,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
@@ -195,8 +219,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
   },
   reasonText: {
-    color: COLORS.textMuted,
-    fontSize: 11,
+    color: COLORS.textSecondary,
+    fontSize: 14,
     fontWeight: '600',
   },
   reasonTextActive: {
@@ -209,10 +233,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: 48,
     color: '#ffffff',
-    fontSize: 14,
-    letterSpacing: 2,
+    fontSize: 18,
+    letterSpacing: 6,
     textAlign: 'center',
     marginBottom: 16,
   },
@@ -221,7 +245,16 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 10,
   },
+  closeBtn: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -12,
+  },
   cancelBtn: {
+    minHeight: 48,
+    justifyContent: 'center',
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 10,
@@ -229,10 +262,11 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     color: COLORS.textSecondary,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
   },
   confirmBtn: {
+    minHeight: 48,
     backgroundColor: '#dc2626',
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -242,7 +276,7 @@ const styles = StyleSheet.create({
   },
   confirmText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '800',
   },
 });

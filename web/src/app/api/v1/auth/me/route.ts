@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuth, isSetupRequired } from '@/lib/auth';
+import { getAuth, isSetupRequired, serverError } from '@/lib/auth';
 
 // Public: tells a client which screen to show (setup, sign in / pair, PIN lock, or the app)
 export async function GET(req: NextRequest) {
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
         permissions: auth.permissions,
       },
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return serverError(error);
   }
 }

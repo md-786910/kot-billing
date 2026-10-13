@@ -10,7 +10,6 @@ import {
   AppSettings,
   KOTStatus,
   CartItem,
-  AuthUser,
 } from '@/types/pos';
 import { POSOrderView } from '@/components/POSOrderView';
 import { KOTQueueView } from '@/components/KOTQueueView';
@@ -22,8 +21,9 @@ import { ShiftRegisterView } from '@/components/ShiftRegisterView';
 import { SettingsView } from '@/components/SettingsView';
 import { ThermalReceipt } from '@/components/ThermalReceipt';
 import { TopBar } from '@/components/TopBar';
-import { StaffAuthModal } from '@/components/StaffAuthModal';
-import { NavTabs, WebTabKey } from '@/components/NavTabs';
+import { NavTabs, WebTabKey, allowedTabs } from '@/components/NavTabs';
+import { AuthProvider, useAuth } from '@/components/auth/AuthProvider';
+import { TeamView } from '@/components/auth/TeamView';
 import { playOrderChime, playTimerAlert } from '@/utils/audio';
 import { formatINR } from '@/utils/format';
 import {
@@ -58,6 +58,15 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export default function POSHomePage() {
+  return (
+    <AuthProvider>
+      <POSApp />
+    </AuthProvider>
+  );
+}
+
+function POSApp() {
+  const auth = useAuth();
   const [isLoaded, setIsLoaded] = useState(false);
   const [dbStatus, setDbStatus] = useState<'connected' | 'connecting' | 'fallback'>('connecting');
   const [dbMessage, setDbMessage] = useState<string>('Connecting to MongoDB Atlas...');
@@ -68,7 +77,10 @@ export default function POSHomePage() {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
-  const [activeTab, setActiveTab] = useState<WebTabKey>('order');
+  const visibleTabs = useMemo(() => allowedTabs(auth.permissions), [auth.permissions]);
+  const [selectedTab, setActiveTab] = useState<WebTabKey>('order');
+  const activeTab: WebTabKey = visibleTabs.includes(selectedTab) ? selectedTab : visibleTabs[0];
+  const isStationDisplay = !auth.user && auth.device?.type === 'DISPLAY';
 
   const [currentLocation, setCurrentLocation] = useState<string>('Table 1');
   const [selectedBillingOrderId, setSelectedBillingOrderId] = useState<string>('');
@@ -85,45 +97,6 @@ export default function POSHomePage() {
   });
 
   const [currentTime, setCurrentTime] = useState<string>('');
-
-  // Staff Authentication & Terminal Session
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('layali_staff_user');
-      if (saved) {
-        setCurrentUser(JSON.parse(saved));
-      } else {
-        const defaultUser: AuthUser = {
-          id: 'admin_default',
-          name: 'Manager / Admin',
-          role: 'ADMIN',
-        };
-        setCurrentUser(defaultUser);
-        localStorage.setItem('layali_staff_user', JSON.stringify(defaultUser));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleLoginSuccess = (user: AuthUser) => {
-    setCurrentUser(user);
-    try {
-      localStorage.setItem('layali_staff_user', JSON.stringify(user));
-    } catch {}
-    setIsAuthModalOpen(false);
-  };
-
-  const handleLockTerminal = () => {
-    setCurrentUser(null);
-    try {
-      localStorage.removeItem('layali_staff_user');
-    } catch {}
-    setIsAuthModalOpen(true);
-  };
 
   // Clock
   useEffect(() => {
@@ -459,8 +432,8 @@ export default function POSHomePage() {
       }>;
     }
   ) => {
-    try {
-      const res = await fetch('/api/v1/billing', {
+    const send = (approvalPin?: string) =>
+      fetch('/api/v1/billing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -471,14 +444,24 @@ export default function POSHomePage() {
           discountReason: options?.discountReason,
           taxPercent: options?.taxPercent,
           closeOrder: true,
+          approvalPin,
         }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        await refreshAllData();
+      }).then(async (res) => ({ status: res.status, json: await res.json() }));
+
+    try {
+      let { status, json } = await send();
+      if (status === 403 && json.error === 'Manager PIN required') {
+        const pin = await auth.requestApproval('This discount is above the cashier limit');
+        if (!pin) return;
+        ({ status, json } = await send(pin));
       }
+      if (!json.success) {
+        alert(json.error || 'Could not settle the bill');
+        return;
+      }
+      await refreshAllData();
     } catch {
-      // ignore
+      alert('Cannot reach the server. The bill was not saved.');
     }
   };
 
@@ -505,17 +488,21 @@ export default function POSHomePage() {
             dbMessage={dbMessage}
             currentTime={currentTime}
             onRefresh={refreshAllData}
-            currentUser={currentUser}
-            onOpenAuth={() => setIsAuthModalOpen(true)}
-            onLock={handleLockTerminal}
+            currentUser={auth.user}
+            deviceName={auth.device?.name}
+            onOpenAccount={auth.openAccount}
+            onLock={auth.lock}
           />
           <NavTabs
-            activeTab={activeTab as WebTabKey}
+            activeTab={activeTab}
             onTabChange={(tab) => setActiveTab(tab)}
-            activeOrdersCount={activeOrdersCount}
-            activeKotsCount={activeKotsCount}
-            activeShishaCount={activeShishaCount}
-            activeBookingsCount={activeBookingsCount}
+            visibleTabs={visibleTabs}
+            badges={{
+              live: activeOrdersCount,
+              kot: activeKotsCount,
+              shisha: activeShishaCount,
+              booking: activeBookingsCount,
+            }}
           />
         </div>
       </header>
@@ -545,7 +532,7 @@ export default function POSHomePage() {
 
         {activeTab === 'kot' && (
           <KOTQueueView
-            kots={kots}
+            kots={isStationDisplay ? kots.filter((k) => k.station === auth.device?.station) : kots}
             onStatusChange={handleKOTStatusChange}
             onPrintKot={(kot) =>
               setPrintModal({ isOpen: true, type: 'kot', kot })
@@ -602,6 +589,8 @@ export default function POSHomePage() {
             }
           />
         )}
+
+        {activeTab === 'team' && <TeamView />}
 
         {activeTab === 'shifts' && (
           <ShiftRegisterView />
@@ -666,12 +655,6 @@ export default function POSHomePage() {
         )}
       </div>
 
-      {/* Staff Authentication & Terminal Lock Modal */}
-      <StaffAuthModal
-        isOpen={isAuthModalOpen || !currentUser}
-        onClose={currentUser ? () => setIsAuthModalOpen(false) : undefined}
-        onLoginSuccess={handleLoginSuccess}
-      />
     </div>
   );
 }

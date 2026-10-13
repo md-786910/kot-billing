@@ -29,7 +29,7 @@ export const TableTransferModal: React.FC<TableTransferModalProps> = ({
   orderNumber,
   onSuccess,
 }) => {
-  const { tables, orders, transferTable, loading } = usePOS();
+  const { tables, orders, transferTable, loading, markActivity } = usePOS();
 
   // Find all occupied table names
   const occupiedNames = useMemo(() => {
@@ -69,7 +69,7 @@ export const TableTransferModal: React.FC<TableTransferModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
+      <View style={styles.modalOverlay} onTouchStart={markActivity}>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

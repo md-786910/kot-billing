@@ -6,7 +6,8 @@ import { COLORS } from '../constants/theme';
 
 interface ShishaCardProps {
   pot: KOT;
-  onExtend: (kotId: string) => void;
+  /** Omitted when the signed-in user can't manage shisha */
+  onExtend?: (kotId: string) => void;
 }
 
 export const ShishaCard: React.FC<ShishaCardProps> = ({ pot, onExtend }) => {
@@ -24,13 +25,15 @@ export const ShishaCard: React.FC<ShishaCardProps> = ({ pot, onExtend }) => {
         <Text style={styles.shishaTimerText}>
           Duration: {pot.duration || 45} mins
         </Text>
-        <TouchableOpacity
-          style={styles.extendBtn}
-          onPress={() => onExtend(pot.id)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.extendBtnText}>+15 Mins</Text>
-        </TouchableOpacity>
+        {onExtend ? (
+          <TouchableOpacity
+            style={styles.extendBtn}
+            onPress={() => onExtend(pot.id)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.extendBtnText}>+15 Mins</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );

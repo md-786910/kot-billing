@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { UserModel, UserRole, USER_ROLES } from '@/models/User';
 import { hashSecret } from '@/lib/auth/crypto';
-import { audit, isLocked, jsonError, PIN_PATTERN, requireAuth, revokeUserSessions, str } from '@/lib/auth';
+import { audit, isLocked, jsonError, PIN_PATTERN, requireAuth, revokeUserSessions, str, serverError } from '@/lib/auth';
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,40}$/;
 
@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
         isLocked: isLocked(u),
       })),
     });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }
 
@@ -56,8 +56,8 @@ export async function POST(req: NextRequest) {
     });
     await audit(guard.auth, 'staff.created', String(user._id), { name, role });
     return NextResponse.json({ success: true, data: { id: String(user._id) } });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }
 
@@ -147,8 +147,8 @@ export async function PATCH(req: NextRequest) {
     if (signOut) await revokeUserSessions(id);
     await audit(auth, 'staff.updated', id, { name: user.name, changes });
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }
 

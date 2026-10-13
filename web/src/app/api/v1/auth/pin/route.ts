@@ -4,7 +4,7 @@ import { UserModel } from '@/models/User';
 import { verifySecret } from '@/lib/auth/crypto';
 import {
   audit, clearFailedAttempts, createSession, getAuth, isLocked, jsonError, LOCKED_MESSAGE, PIN_PATTERN,
-  rateLimit, recordFailedAttempt, respondWithSession, str,
+  rateLimit, recordFailedAttempt, respondWithSession, str, serverError,
 } from '@/lib/auth';
 
 // Staff PIN sign-in. Only allowed on a paired terminal or phone; the session is bound to that device.
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const session = await createSession(data.id, 'PIN', auth.device.id);
     await audit({ ...auth, user: data, actorName: data.name }, 'auth.pin_login', data.id);
     return respondWithSession(req, { user: data }, session);
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

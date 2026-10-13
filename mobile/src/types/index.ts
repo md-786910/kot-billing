@@ -3,12 +3,47 @@ export type TableStatus = 'VACANT' | 'OCCUPIED' | 'BILL_PRINTED' | 'RESERVED';
 export type KOTStatus = 'NEW' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
 export type UserRole = 'ADMIN' | 'MANAGER' | 'CASHIER' | 'CAPTAIN' | 'KITCHEN_CHEF' | 'SHISHA_MASTER';
 
+export type DeviceType = 'TERMINAL' | 'MOBILE' | 'DISPLAY';
+
+/** Server-side permission keys (see web/src/lib/auth/permissions.ts) */
+export type Permission =
+  | 'data.read'
+  | 'order.create'
+  | 'table.move'
+  | 'order.void'
+  | 'bill.settle'
+  | 'bill.discount.unlimited'
+  | 'kot.update'
+  | 'shisha.manage'
+  | 'booking.manage'
+  | 'shift.manage'
+  | 'menu.stock'
+  | 'menu.edit'
+  | 'table.update'
+  | 'staff.manage'
+  | 'device.manage'
+  | 'settings.manage'
+  | 'audit.view';
+
+/** A staff member as returned by /auth/staff and /auth/me (never includes PINs) */
 export interface StaffUser {
   id: string;
   name: string;
   role: UserRole;
-  phone?: string;
-  pin?: string;
+}
+
+export interface AuthDevice {
+  id: string;
+  name: string;
+  type: DeviceType;
+  station: Station | null;
+}
+
+export interface AuthState {
+  setupRequired: boolean;
+  user: StaffUser | null;
+  device: AuthDevice | null;
+  permissions: Permission[];
 }
 
 export interface TableItem {

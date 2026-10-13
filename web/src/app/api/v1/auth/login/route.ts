@@ -3,7 +3,7 @@ import { UserModel } from '@/models/User';
 import { verifySecret } from '@/lib/auth/crypto';
 import {
   audit, clearFailedAttempts, clientIp, createSession, getAuth, isLocked, jsonError, LOCKED_MESSAGE,
-  rateLimit, recordFailedAttempt, respondWithSession, str,
+  rateLimit, recordFailedAttempt, respondWithSession, str, serverError,
 } from '@/lib/auth';
 
 // Username + password sign-in (owner / managers). Works from any browser, paired or not.
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const session = await createSession(data.id, 'PASSWORD', auth.device?.id ?? null);
     await audit({ ...auth, user: data, actorName: data.name }, 'auth.login', data.id);
     return respondWithSession(req, { user: data }, session);
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

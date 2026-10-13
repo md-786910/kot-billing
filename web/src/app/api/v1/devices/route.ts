@@ -3,11 +3,11 @@ import mongoose from 'mongoose';
 import { DeviceModel, DEVICE_STATIONS, DEVICE_TYPES, DeviceStation, DeviceType } from '@/models/Device';
 import { PairingCodeModel } from '@/models/PairingCode';
 import { generatePairingCode, generateToken, sha256 } from '@/lib/auth/crypto';
-import { audit, jsonError, requireAuth, respondWithDevice, revokeDeviceSessions, str } from '@/lib/auth';
+import { audit, jsonError, requireAuth, respondWithDevice, revokeDeviceSessions, str, serverError } from '@/lib/auth';
 
 const PAIRING_CODE_MINUTES = 10;
 
-function parseDeviceInput(body: any): { name: string; type: DeviceType; station: DeviceStation | null } | string {
+function parseDeviceInput(body: Record<string, unknown>): { name: string; type: DeviceType; station: DeviceStation | null } | string {
   const name = str(body.name, 40);
   const type = str(body.type, 20) as DeviceType;
   const station = (str(body.station, 30) || null) as DeviceStation | null;
@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
         isCurrent: String(d._id) === guard.auth.device?.id,
       })),
     });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }
 
@@ -67,8 +67,8 @@ export async function POST(req: NextRequest) {
     }
 
     return jsonError('Unknown action', 400);
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }
 
@@ -97,7 +97,7 @@ export async function PATCH(req: NextRequest) {
     await device.save();
     await audit(guard.auth, 'device.renamed', id, { name });
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

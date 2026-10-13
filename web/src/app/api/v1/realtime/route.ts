@@ -6,7 +6,6 @@ import { realtimeHub, RealtimeMessage } from '@/lib/realtime';
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req, 'data.read');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

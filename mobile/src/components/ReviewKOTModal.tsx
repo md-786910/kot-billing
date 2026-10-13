@@ -43,6 +43,7 @@ export const ReviewKOTModal: React.FC<ReviewKOTModalProps> = ({
     hasShishaInCart,
     punchKOT,
     loading,
+    markActivity,
   } = usePOS();
 
   const [guestName, setGuestName] = useState('');
@@ -73,7 +74,7 @@ export const ReviewKOTModal: React.FC<ReviewKOTModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
+      <View style={styles.modalOverlay} onTouchStart={markActivity}>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Review KOT · {selectedTable}</Text>

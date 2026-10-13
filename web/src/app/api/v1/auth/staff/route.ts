@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { UserModel } from '@/models/User';
-import { getAuth, jsonError } from '@/lib/auth';
+import { getAuth, jsonError, serverError } from '@/lib/auth';
 
 // Names for the PIN lock screen. Paired terminals/phones only; never exposes PINs or phone numbers.
 export async function GET(req: NextRequest) {
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       success: true,
       data: users.map((u) => ({ id: String(u._id), name: u.name, role: u.role })),
     });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

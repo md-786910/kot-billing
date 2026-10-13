@@ -40,7 +40,13 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
     cartTotal,
     refreshData,
     toggle86,
+    can,
   } = usePOS();
+
+  const canOrder = can('order.create');
+  const canSettle = can('bill.settle');
+  const canMove = can('table.move');
+  const canStock = can('menu.stock');
 
   // Mode: Menu vs Running Items
   const [activeTab, setActiveTab] = useState<'menu' | 'running'>('menu');
@@ -110,42 +116,50 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         {/* Action Buttons if table is occupied */}
         {activeOrder ? (
           <View style={styles.headerActionsColumn}>
-            <TouchableOpacity
-              style={styles.settleBtnHeader}
-              onPress={() => setShowBillingModal(true)}
-              activeOpacity={0.8}
-            >
-              <MaterialCommunityIcons name="receipt" size={14} color="#ffffff" />
-              <Text style={styles.settleBtnHeaderText}>Settle Bill</Text>
-            </TouchableOpacity>
+            {canSettle ? (
+              <TouchableOpacity
+                style={styles.settleBtnHeader}
+                onPress={() => setShowBillingModal(true)}
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons name="receipt" size={14} color="#ffffff" />
+                <Text style={styles.settleBtnHeaderText}>Settle Bill</Text>
+              </TouchableOpacity>
+            ) : null}
 
             <View style={styles.subActionsRow}>
-              <TouchableOpacity
-                style={styles.actionBtnSmall}
-                onPress={() => setShowTransferModal(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="swap-horizontal" size={12} color={COLORS.gold} />
-                <Text style={styles.actionBtnSmallText}>Shift</Text>
-              </TouchableOpacity>
+              {canMove ? (
+                <TouchableOpacity
+                  style={styles.actionBtnSmall}
+                  onPress={() => setShowTransferModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="swap-horizontal" size={12} color={COLORS.gold} />
+                  <Text style={styles.actionBtnSmallText}>Shift</Text>
+                </TouchableOpacity>
+              ) : null}
 
-              <TouchableOpacity
-                style={[styles.actionBtnSmall, { borderColor: '#818cf8' }]}
-                onPress={() => setShowMergeModal(true)}
-                activeOpacity={0.8}
-              >
-                <MaterialCommunityIcons name="call-merge" size={12} color="#818cf8" />
-                <Text style={[styles.actionBtnSmallText, { color: '#818cf8' }]}>Merge</Text>
-              </TouchableOpacity>
+              {canMove ? (
+                <TouchableOpacity
+                  style={[styles.actionBtnSmall, { borderColor: '#818cf8' }]}
+                  onPress={() => setShowMergeModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialCommunityIcons name="call-merge" size={12} color="#818cf8" />
+                  <Text style={[styles.actionBtnSmallText, { color: '#818cf8' }]}>Merge</Text>
+                </TouchableOpacity>
+              ) : null}
 
-              <TouchableOpacity
-                style={[styles.actionBtnSmall, { borderColor: '#ef4444' }]}
-                onPress={() => setShowCancelOrderModal(true)}
-                activeOpacity={0.8}
-              >
-                <Feather name="x-circle" size={12} color="#ef4444" />
-                <Text style={[styles.actionBtnSmallText, { color: '#ef4444' }]}>Void</Text>
-              </TouchableOpacity>
+              {canOrder ? (
+                <TouchableOpacity
+                  style={[styles.actionBtnSmall, { borderColor: '#ef4444' }]}
+                  onPress={() => setShowCancelOrderModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="x-circle" size={12} color="#ef4444" />
+                  <Text style={[styles.actionBtnSmallText, { color: '#ef4444' }]}>Void</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -204,7 +218,11 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                   </Text>
                 </View>
 
-                {!it.isVoided ? (
+                {it.isVoided ? (
+                  <View style={styles.voidBadge}>
+                    <Text style={styles.voidBadgeText}>VOID</Text>
+                  </View>
+                ) : canOrder ? (
                   <TouchableOpacity
                     style={styles.voidBtn}
                     onPress={() => {
@@ -216,24 +234,22 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                   >
                     <Text style={styles.voidBtnText}>Void Item</Text>
                   </TouchableOpacity>
-                ) : (
-                  <View style={styles.voidBadge}>
-                    <Text style={styles.voidBadgeText}>VOID</Text>
-                  </View>
-                )}
+                ) : null}
               </View>
             ))}
 
             {/* Quick Settle footer in running items */}
-            <TouchableOpacity
-              style={styles.fullSettleBar}
-              onPress={() => setShowBillingModal(true)}
-            >
-              <MaterialCommunityIcons name="receipt" size={18} color="#ffffff" />
-              <Text style={styles.fullSettleBarText}>
-                Settle & Print Receipt • Total: ₹{runningTotal.toFixed(2)}
-              </Text>
-            </TouchableOpacity>
+            {canSettle ? (
+              <TouchableOpacity
+                style={styles.fullSettleBar}
+                onPress={() => setShowBillingModal(true)}
+              >
+                <MaterialCommunityIcons name="receipt" size={18} color="#ffffff" />
+                <Text style={styles.fullSettleBarText}>
+                  Settle & Print Receipt • Total: ₹{runningTotal.toFixed(2)}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </ScrollView>
       ) : (
@@ -257,6 +273,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
               ) : null}
             </View>
 
+            {canStock ? (
             <TouchableOpacity
               style={[styles.btn86Mode, is86ManagerMode && styles.btn86ModeActive]}
               onPress={() => setIs86ManagerMode((prev) => !prev)}
@@ -275,6 +292,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                 {is86ManagerMode ? '86 Mode ON' : '86 Mode'}
               </Text>
             </TouchableOpacity>
+            ) : null}
           </View>
 
           {/* Category Pills */}
@@ -317,8 +335,9 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                   cartItem={cartItem}
                   onAdd={addToCart}
                   onUpdateQty={updateCartQty}
-                  is86ManagerMode={is86ManagerMode}
+                  is86ManagerMode={canStock && is86ManagerMode}
                   onToggle86={handleToggle86Item}
+                  readOnly={!canOrder}
                 />
               );
             }}
@@ -328,7 +347,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
 
       {/* 5. FLOATING CART BAR */}
       <StickyCartBar
-        count={cartCount}
+        count={canOrder ? cartCount : 0}
         total={cartTotal}
         onReview={() => setShowReviewModal(true)}
       />

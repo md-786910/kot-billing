@@ -10,6 +10,8 @@ interface MenuItemCardProps {
   onUpdateQty: (id: string, delta: number) => void;
   is86ManagerMode?: boolean;
   onToggle86?: (item: MenuItem) => void;
+  /** Hide add/qty controls for staff who can't place orders */
+  readOnly?: boolean;
 }
 
 export const MenuItemCard: React.FC<MenuItemCardProps> = ({
@@ -19,6 +21,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   onUpdateQty,
   is86ManagerMode,
   onToggle86,
+  readOnly,
 }) => {
   const is86 = !item.isAvailable;
 
@@ -63,7 +66,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
         >
           <Text style={styles.addBtnText}>{is86 ? 'RESTORE' : "86 OUT"}</Text>
         </TouchableOpacity>
-      ) : is86 ? (
+      ) : readOnly ? null : is86 ? (
         <View style={styles.btn86Disabled}>
           <Text style={styles.btn86Text}>86'd</Text>
         </View>

@@ -22,6 +22,9 @@ interface MobileBillingModalProps {
   onSettledSuccess: () => void;
 }
 
+// Discount (as % of subtotal) staff may give without a manager's approval — mirrors the server
+const DISCOUNT_LIMIT_PERCENT = 10;
+
 const DISCOUNT_REASONS = [
   'VIP Guest Courtesy',
   'Captain Sample / NC',
@@ -36,7 +39,7 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
   onClose,
   onSettledSuccess,
 }) => {
-  const { settleBill } = usePOS();
+  const { settleBill, can, markActivity } = usePOS();
 
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Split'>('Cash');
   const [cashTendered, setCashTendered] = useState<string>('');
@@ -44,6 +47,7 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
   const [discountReason, setDiscountReason] = useState<string>(DISCOUNT_REASONS[0]);
   const [showReceiptPreview, setShowReceiptPreview] = useState<boolean>(false);
   const [isSettling, setIsSettling] = useState<boolean>(false);
+  const [approvalPin, setApprovalPin] = useState<string>('');
 
   // Split amounts
   const [splitCash, setSplitCash] = useState<string>('0');
@@ -59,7 +63,9 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
     return activeItems.reduce((sum, it) => sum + it.price * it.qty, 0);
   }, [activeItems]);
 
-  const discountNum = Number(discountAmount) || 0;
+  const discountNum = Math.max(0, Number(discountAmount) || 0);
+  const needsApproval =
+    discountNum > (itemsSubtotal * DISCOUNT_LIMIT_PERCENT) / 100 && !can('bill.discount.unlimited');
   const afterDiscount = Math.max(0, itemsSubtotal - discountNum);
   const taxAmount = Math.round((afterDiscount * 0.05) * 100) / 100; // 5% GST
   const cgstAmount = Math.round((taxAmount / 2) * 100) / 100; // 2.5% CGST
@@ -72,12 +78,24 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
 
   const handleSettle = async () => {
     if (!order) return;
+    if (discountNum > itemsSubtotal) {
+      Alert.alert('Discount too high', 'The discount cannot be more than the bill subtotal.');
+      return;
+    }
+    if (needsApproval && !/^\d{4,6}$/.test(approvalPin)) {
+      Alert.alert(
+        'Manager PIN required',
+        `Discounts above ${DISCOUNT_LIMIT_PERCENT}% need a manager to enter their PIN.`
+      );
+      return;
+    }
 
     let payload: any = {
       orderId: order.id,
       discount: discountNum,
       discountReason: discountNum > 0 ? discountReason : undefined,
       taxPercent: 5,
+      approvalPin: needsApproval ? approvalPin : undefined,
     };
 
     if (paymentMethod === 'Split') {
@@ -101,12 +119,17 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
     setIsSettling(true);
     const res = await settleBill(payload);
     setIsSettling(false);
+    setApprovalPin('');
 
     if (res.success) {
       Alert.alert(
         'Bill Settled Successfully',
         `Table ${order.tableName} bill of ₹${grandTotal} settled via ${paymentMethod}. Table is now VACANT.`
       );
+      onSettledSuccess();
+      onClose();
+    } else if (res.status === 409) {
+      Alert.alert('Already settled', res.error || 'This bill is already settled.');
       onSettledSuccess();
       onClose();
     } else {
@@ -117,8 +140,8 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
   if (!order) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay} onTouchStart={markActivity}>
         <View style={styles.modalCard}>
           {/* Header */}
           <View style={styles.headerRow}>
@@ -258,6 +281,24 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+                </View>
+              )}
+
+              {needsApproval && (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={styles.approvalHint}>
+                    Above {DISCOUNT_LIMIT_PERCENT}% of the bill. A manager must enter their PIN.
+                  </Text>
+                  <TextInput
+                    style={styles.cashInput}
+                    keyboardType="number-pad"
+                    placeholder="Manager PIN"
+                    placeholderTextColor={COLORS.textMuted}
+                    secureTextEntry
+                    maxLength={6}
+                    value={approvalPin}
+                    onChangeText={(t) => setApprovalPin(t.replace(/\D/g, '').slice(0, 6))}
+                  />
                 </View>
               )}
             </View>
@@ -580,10 +621,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   fieldLabel: {
-    color: COLORS.textMuted,
-    fontSize: 11,
+    color: COLORS.textSecondary,
+    fontSize: 12,
     fontWeight: '600',
     marginBottom: 4,
+  },
+  approvalHint: {
+    color: COLORS.gold,
+    fontSize: 13,
+    marginBottom: 6,
   },
   reasonChip: {
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -687,8 +733,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 48,
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
   },
   changeReturnRow: {

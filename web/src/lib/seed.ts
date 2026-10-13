@@ -1,7 +1,7 @@
 import { TableModel } from '../models/Table';
 import { MenuItemModel } from '../models/MenuItem';
 import { SettingsModel } from '../models/Settings';
-import { UserModel } from '../models/User';
+import { migrateLegacyPins } from './auth';
 import { OrderModel } from '../models/Order';
 import { KOTModel } from '../models/KOT';
 

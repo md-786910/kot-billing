@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SessionModel } from '@/models/Session';
-import { audit, clearSessionCookie, getAuth, jsonError } from '@/lib/auth';
+import { audit, clearSessionCookie, getAuth, serverError } from '@/lib/auth';
 
 // Ends the staff session; the device stays paired
 export async function POST(req: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     const res = NextResponse.json({ success: true });
     clearSessionCookie(res);
     return res;
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { UserModel } from '@/models/User';
 import { SessionModel } from '@/models/Session';
 import { hashSecret, verifySecret } from '@/lib/auth/crypto';
-import { audit, getAuth, jsonError, rateLimit } from '@/lib/auth';
+import { audit, getAuth, jsonError, rateLimit, serverError } from '@/lib/auth';
 
 // Signed-in users with a password change it; other sessions of the same user are signed out
 export async function POST(req: NextRequest) {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     );
     await audit(auth, 'auth.password_changed', auth.user.id);
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

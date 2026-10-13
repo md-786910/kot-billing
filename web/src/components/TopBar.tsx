@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { AppSettings, AuthUser } from '@/types/pos';
+import { ROLE_LABELS } from '@/lib/auth/permissions';
 import {
   Flame,
   Volume2,
@@ -22,7 +23,8 @@ interface TopBarProps {
   currentTime: string;
   onRefresh: () => void;
   currentUser?: AuthUser | null;
-  onOpenAuth: () => void;
+  deviceName?: string;
+  onOpenAccount: () => void;
   onLock: () => void;
 }
 
@@ -34,7 +36,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentTime,
   onRefresh,
   currentUser,
-  onOpenAuth,
+  deviceName,
+  onOpenAccount,
   onLock,
 }) => {
   return (
@@ -128,32 +131,34 @@ export const TopBar: React.FC<TopBarProps> = ({
           <span>{currentTime || '00:00:00'}</span>
         </div>
 
-        {/* Staff User & Terminal Lock */}
+        {/* Signed-in staff (opens My account) & lock; station displays show their device name */}
         {currentUser ? (
-          <div className="flex items-center gap-1.5 bg-[#171a26] border border-neutral-700/80 rounded-lg p-1 pl-2.5">
-            <div className="flex items-center gap-1.5 text-xs">
-              <User className="w-3.5 h-3.5 text-[#d4af37]" />
-              <span className="font-bold text-white truncate max-w-[110px]">{currentUser.name}</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#9f1119]/50 text-amber-300 border border-[#9f1119]">
-                {currentUser.role}
-              </span>
-            </div>
+          <div className="flex items-center gap-1 bg-[#171a26] border border-neutral-700/80 rounded-lg p-1">
+            <button
+              onClick={onOpenAccount}
+              className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm hover:bg-white/5 cursor-pointer"
+              title="My account"
+            >
+              <User className="w-4 h-4 text-[#d4af37]" />
+              <span className="font-bold text-white truncate max-w-[120px]">{currentUser.name}</span>
+              <span className="hidden sm:inline text-xs text-amber-300">{ROLE_LABELS[currentUser.role]}</span>
+            </button>
             <button
               onClick={onLock}
-              className="p-1 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition-colors cursor-pointer"
-              title="Lock Terminal / Switch User"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-semibold text-neutral-300 hover:text-white hover:bg-white/5 cursor-pointer"
+              title="Lock terminal / switch staff"
             >
-              <Lock className="w-3.5 h-3.5" />
+              <Lock className="w-4 h-4" />
+              <span className="hidden sm:inline">Lock</span>
             </button>
           </div>
         ) : (
-          <button
-            onClick={onOpenAuth}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#d4af37] hover:bg-[#e6c158] text-black font-bold text-xs rounded-lg shadow-sm transition-colors cursor-pointer"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span>Staff Sign In</span>
-          </button>
+          deviceName && (
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#171a26] border border-neutral-700/80 text-sm font-semibold text-white">
+              <ShieldCheck className="w-4 h-4 text-[#d4af37]" />
+              {deviceName}
+            </div>
+          )
         )}
 
         <button

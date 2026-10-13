@@ -11,6 +11,8 @@ export const SESSION_COOKIE = 'ly_session';
 export const DEVICE_COOKIE = 'ly_device';
 
 export const PIN_SESSION_HOURS = 12;
+// Shared-device PIN sessions also end server-side after this long without any API call
+const PIN_SESSION_IDLE_MS = 15 * 60_000;
 export const PASSWORD_SESSION_HOURS = 8;
 const DEVICE_COOKIE_DAYS = 365;
 const MAX_FAILED_ATTEMPTS = 5;
@@ -55,8 +57,10 @@ function readDeviceToken(req: NextRequest): string | null {
   return req.headers.get('x-device-token') || req.cookies.get(DEVICE_COOKIE)?.value || null;
 }
 
+/** Client address for rate limiting. Forwarded headers are only trusted behind a proxy (TRUST_PROXY=true). */
 export function clientIp(req: NextRequest): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip') || 'local';
+  if (process.env.TRUST_PROXY !== 'true') return 'direct';
+  return req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip') || 'direct';
 }
 
 export function str(value: unknown, max = 200): string {
@@ -92,6 +96,12 @@ export function clearDeviceCookie(res: NextResponse) {
 
 export function jsonError(error: string, status: number) {
   return NextResponse.json({ success: false, error }, { status });
+}
+
+/** Log the real error server-side; never leak internals to the client. */
+export function serverError(error: unknown) {
+  console.error(error);
+  return jsonError('Something went wrong. Please try again.', 500);
 }
 
 /** Success response carrying a new session: a cookie for browsers, `sessionToken` in the body for mobile. */
@@ -134,11 +144,13 @@ export async function getAuth(req: NextRequest): Promise<AuthContext> {
   let sessionId: string | null = null;
   const sessionToken = readSessionToken(req);
   if (sessionToken) {
-    const session = await SessionModel.findOne({
+    const found = await SessionModel.findOne({
       tokenHash: sha256(sessionToken),
       revokedAt: null,
       expiresAt: { $gt: now },
     }).lean();
+    const idle = found?.method === 'PIN' && now.getTime() - new Date(found.lastUsedAt).getTime() > PIN_SESSION_IDLE_MS;
+    const session = idle ? null : found;
     // A PIN session only works from the device it was opened on
     const deviceMatches = !session?.deviceId || session.deviceId === device?.id;
     if (session && deviceMatches) {
@@ -202,10 +214,9 @@ export async function revokeDeviceSessions(deviceId: string) {
 // ---------- Brute-force protection ----------
 
 declare global {
-  // eslint-disable-next-line no-var
   var authRateLimits: Map<string, number[]> | undefined;
 }
-const attempts = (global.authRateLimits ??= new Map());
+const attempts: Map<string, number[]> = (global.authRateLimits ??= new Map());
 
 /** Sliding-window limiter (per server process). Returns false when the key is over its limit. */
 export function rateLimit(key: string, limit = 10, windowMs = 5 * 60_000): boolean {

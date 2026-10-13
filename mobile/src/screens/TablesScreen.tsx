@@ -13,7 +13,8 @@ export const TablesScreen: React.FC<TablesScreenProps> = ({
   onSelectTableAndOrder,
   onSelectTableAndBill,
 }) => {
-  const { tables, selectedFloor, setSelectedFloor } = usePOS();
+  const { tables, selectedFloor, setSelectedFloor, can } = usePOS();
+  const canSettle = can('bill.settle');
 
   return (
     <View style={styles.container}>
@@ -44,7 +45,7 @@ export const TablesScreen: React.FC<TablesScreenProps> = ({
               key={table.id}
               table={table}
               onSelect={onSelectTableAndOrder}
-              onSettleBill={onSelectTableAndBill}
+              onSettleBill={canSettle ? onSelectTableAndBill : undefined}
             />
           ))}
       </ScrollView>

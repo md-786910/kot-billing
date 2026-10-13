@@ -1,12 +1,18 @@
 import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ShishaCard } from '../components/ShishaCard';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 
 export const ShishaScreen: React.FC = () => {
-  const { kots, extendShisha, refreshData } = usePOS();
+  const { kots, extendShisha, refreshData, can } = usePOS();
+  const canExtend = can('shisha.manage');
+
+  const handleExtend = async (kotId: string) => {
+    const res = await extendShisha(kotId);
+    if (!res.success) Alert.alert('Could not extend', res.error || 'Try again.');
+  };
   const shishaPots = kots.filter((k) => k.station === 'Shisha Master' && k.status !== 'SERVED');
 
   return (
@@ -22,7 +28,7 @@ export const ShishaScreen: React.FC = () => {
         <Text style={styles.emptyText}>No active shisha pots currently running.</Text>
       ) : (
         shishaPots.map((pot) => (
-          <ShishaCard key={pot.id} pot={pot} onExtend={extendShisha} />
+          <ShishaCard key={pot.id} pot={pot} onExtend={canExtend ? handleExtend : undefined} />
         ))
       )}
     </ScrollView>

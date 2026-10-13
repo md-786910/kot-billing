@@ -11,7 +11,6 @@ const KOT_STATUSES = ['NEW', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'];
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req, 'data.read');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const { searchParams } = new URL(req.url);

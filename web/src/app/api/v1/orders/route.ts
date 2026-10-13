@@ -37,7 +37,6 @@ async function getNextOrderSequence(): Promise<number> {
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req, 'data.read');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const { searchParams } = new URL(req.url);
@@ -215,7 +214,6 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const guard = await requireAuth(req, 'order.create');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();

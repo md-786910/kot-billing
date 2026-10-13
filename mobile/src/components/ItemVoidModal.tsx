@@ -44,38 +44,50 @@ export const ItemVoidModal: React.FC<ItemVoidModalProps> = ({
   itemQty,
   onSuccess,
 }) => {
-  const { voidItem, loading } = usePOS();
+  const { voidItem, loading, can, markActivity } = usePOS();
   const [selectedReason, setSelectedReason] = useState<string>(VOID_REASONS[0]);
   const [pin, setPin] = useState<string>('');
 
+  // Staff without void rights need a manager to approve on this phone
+  const needsManagerPin = !can('order.void');
+
+  const close = () => {
+    setPin('');
+    onClose();
+  };
+
   const handleConfirmVoid = async () => {
     if (itemIndex === null) return;
-    if (!pin.trim()) {
-      Alert.alert('Supervisor PIN Required', 'Please enter supervisor 4-digit PIN (Default: 1111).');
+    if (needsManagerPin && !/^\d{4,6}$/.test(pin)) {
+      Alert.alert('Manager PIN required', 'Ask a manager to enter their PIN to approve this void.');
       return;
     }
 
-    const res = await voidItem(orderId, itemIndex, selectedReason, pin.trim());
+    const res = await voidItem(orderId, itemIndex, selectedReason, needsManagerPin ? pin : undefined);
+    setPin('');
     if (res.success) {
       Alert.alert('Item Voided', `${itemQty}x ${itemName} voided. Kitchen void ticket dispatched.`);
-      setPin('');
+      if (onSuccess) onSuccess();
+      onClose();
+    } else if (res.status === 409) {
+      Alert.alert('Bill already closed', res.error || 'This bill is already closed.');
       if (onSuccess) onSuccess();
       onClose();
     } else {
-      Alert.alert('Void Authorization Failed', res.error || 'Invalid supervisor PIN or action rejected.');
+      Alert.alert('Void failed', res.error || 'The void was rejected.');
     }
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
+      <View style={styles.modalOverlay} onTouchStart={markActivity}>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Ionicons name="shield-checkmark" size={20} color="#f87171" />
-              <Text style={styles.modalTitle}>Supervisor Void Item</Text>
+              <Text style={styles.modalTitle}>Void Item</Text>
             </View>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity onPress={close} activeOpacity={0.7} style={styles.closeBtn} accessibilityLabel="Close">
               <Ionicons name="close" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
           </View>
@@ -108,25 +120,26 @@ export const ItemVoidModal: React.FC<ItemVoidModalProps> = ({
             })}
           </ScrollView>
 
-          <View style={{ marginTop: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.sectionTitle}>Supervisor PIN:</Text>
-              <Text style={styles.pinHint}>Default: 1111</Text>
+          {needsManagerPin ? (
+            <View style={{ marginTop: 8 }}>
+              <Text style={styles.sectionTitle}>Manager PIN (required)</Text>
+              <TextInput
+                style={styles.pinInput}
+                placeholder="Manager PIN"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="number-pad"
+                maxLength={6}
+                secureTextEntry
+                value={pin}
+                onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))}
+              />
             </View>
-            <TextInput
-              style={styles.pinInput}
-              placeholder="Enter 4-digit PIN"
-              placeholderTextColor={COLORS.textMuted}
-              keyboardType="number-pad"
-              maxLength={4}
-              secureTextEntry
-              value={pin}
-              onChangeText={setPin}
-            />
-          </View>
+          ) : (
+            <View style={{ height: 12 }} />
+          )}
 
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={close} activeOpacity={0.7}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -138,7 +151,7 @@ export const ItemVoidModal: React.FC<ItemVoidModalProps> = ({
               {loading ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.confirmVoidBtnText}>Authorize Void</Text>
+                <Text style={styles.confirmVoidBtnText}>Void item</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -193,16 +206,18 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   sectionTitle: {
-    color: COLORS.textMuted,
-    fontSize: 11,
+    color: COLORS.textSecondary,
+    fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  pinHint: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    fontFamily: 'monospace',
+  closeBtn: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -12,
   },
   reasonOption: {
     flexDirection: 'row',
@@ -214,6 +229,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
     marginBottom: 6,
+    minHeight: 48,
   },
   reasonOptionSelected: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
@@ -221,7 +237,7 @@ const styles = StyleSheet.create({
   },
   reasonText: {
     color: COLORS.textPrimary,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
   },
   reasonTextSelected: {
@@ -249,18 +265,22 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
+    minHeight: 48,
+    justifyContent: 'center',
     backgroundColor: COLORS.bgSurface,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
   },
   cancelBtnText: {
-    color: COLORS.textMuted,
-    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontSize: 14,
     fontWeight: '700',
   },
   confirmVoidBtn: {
     flex: 2,
+    minHeight: 48,
+    justifyContent: 'center',
     backgroundColor: '#dc2626',
     paddingVertical: 12,
     borderRadius: 10,
@@ -268,7 +288,7 @@ const styles = StyleSheet.create({
   },
   confirmVoidBtnText: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
   },
 });

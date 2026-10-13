@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { UserModel } from '@/models/User';
 import { hashSecret, verifySecret } from '@/lib/auth/crypto';
-import { audit, getAuth, jsonError, PIN_PATTERN, rateLimit, str } from '@/lib/auth';
+import { audit, getAuth, jsonError, PIN_PATTERN, rateLimit, str, serverError } from '@/lib/auth';
 
 // Signed-in staff change their own PIN; the current PIN is always required
 export async function POST(req: NextRequest) {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     await user.save();
     await audit(auth, 'auth.pin_changed', auth.user.id);
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

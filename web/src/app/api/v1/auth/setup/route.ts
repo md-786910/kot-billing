@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { UserModel } from '@/models/User';
 import { hashSecret } from '@/lib/auth/crypto';
-import { audit, createSession, isSetupRequired, jsonError, PIN_PATTERN, respondWithSession, str } from '@/lib/auth';
+import { audit, createSession, isSetupRequired, jsonError, PIN_PATTERN, respondWithSession, str, serverError } from '@/lib/auth';
 
 // First run only: create the owner account
 export async function POST(req: NextRequest) {
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     const session = await createSession(user.id, 'PASSWORD', null);
     return respondWithSession(req, { user }, session);
-  } catch (error: any) {
-    return jsonError(error.message, 500);
+  } catch (error) {
+    return serverError(error);
   }
 }

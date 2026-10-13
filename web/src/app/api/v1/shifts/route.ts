@@ -7,7 +7,6 @@ import { OrderModel } from '@/models/Order';
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req, 'shift.manage');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     // Find active open shift

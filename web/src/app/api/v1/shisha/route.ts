@@ -9,7 +9,6 @@ import { broadcastRealtimeEvent } from '@/lib/realtime';
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req, 'data.read');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const shishaKots = await KOTModel.find({ station: 'Shisha Master' })
@@ -25,7 +24,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req, 'shisha.manage');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();

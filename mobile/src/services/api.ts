@@ -1,364 +1,345 @@
-import { TableItem, MenuItem, Order, KOT, StaffUser } from '../types';
+import { TableItem, MenuItem, Order, KOT, StaffUser, AuthDevice, AuthState } from '../types';
 
-let serverUrl = 'http://10.180.104.168:3001';
+// ---------- Client state ----------
+
+let serverUrl = '';
+let deviceToken: string | null = null;
+let sessionToken: string | null = null;
+let unauthorizedHandler: ((sessionTokenUsed: string | null) => void) | null = null;
+
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** Adds http:// when no scheme is given and strips trailing slashes */
+export function normalizeServerUrl(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
 
 export function setServerBaseUrl(url: string) {
-  serverUrl = url.replace(/\/+$/, '');
+  serverUrl = normalizeServerUrl(url);
 }
 
 export function getServerBaseUrl() {
   return serverUrl;
 }
 
-export async function checkServerHealth(): Promise<{ success: boolean; message: string }> {
+export function setDeviceToken(token: string | null) {
+  deviceToken = token;
+}
+
+export function getDeviceToken() {
+  return deviceToken;
+}
+
+export function setSessionToken(token: string | null) {
+  sessionToken = token;
+}
+
+export function getSessionToken() {
+  return sessionToken;
+}
+
+/**
+ * Called when a normal API call returns 401 (session ended or device revoked).
+ * Receives the session token that request was sent with, so stale in-flight calls can be ignored.
+ */
+export function setOnUnauthorized(handler: ((sessionTokenUsed: string | null) => void) | null) {
+  unauthorizedHandler = handler;
+}
+
+// ---------- Request helper ----------
+
+/** Every failed call throws this. `status` is 0 for network errors and timeouts. */
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+export interface ApiEnvelope<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+  sessionToken?: string;
+  deviceToken?: string;
+}
+
+interface RequestOptions {
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  body?: unknown;
+  /** Sign-in style calls where 401 means "wrong code/PIN", not "session ended" */
+  skipUnauthorizedHook?: boolean;
+  /** Override the session token sent (e.g. to revoke a session that was already cleared locally) */
+  sessionTokenOverride?: string | null;
+  timeoutMs?: number;
+}
+
+export async function request<T = unknown>(path: string, options: RequestOptions = {}): Promise<ApiEnvelope<T>> {
+  if (!serverUrl) throw new ApiError(0, 'Server address is not set');
+
+  const { method = 'GET', body, skipUnauthorizedHook = false, timeoutMs = REQUEST_TIMEOUT_MS } = options;
+  const tokenUsed = options.sessionTokenOverride !== undefined ? options.sessionTokenOverride : sessionToken;
+
+  const headers: Record<string, string> = { 'X-Client': 'mobile', Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (deviceToken) headers['X-Device-Token'] = deviceToken;
+  if (tokenUsed) headers.Authorization = `Bearer ${tokenUsed}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
   try {
-    const res = await fetch(`${serverUrl}/api/v1/init`, { method: 'GET' });
-    const data = await res.json();
-    return { success: data.success, message: data.message || 'Connected' };
-  } catch (err: any) {
-    return { success: false, message: err.message || 'Connection failed' };
-  }
-}
-
-export async function fetchTables(): Promise<TableItem[]> {
-  const res = await fetch(`${serverUrl}/api/v1/tables`);
-  const json = await res.json();
-  if (json.success && json.data) {
-    return json.data.map((t: any) => ({
-      id: t._id || t.name,
-      name: t.name,
-      floor: t.floor,
-      type: t.type,
-      capacity: t.capacity,
-      status: t.status,
-      currentOrderId: t.currentOrderId,
-      hourlyRate: t.hourlyRate,
-    }));
-  }
-  return [];
-}
-
-export async function fetchMenu(): Promise<MenuItem[]> {
-  const res = await fetch(`${serverUrl}/api/v1/menu`);
-  const json = await res.json();
-  if (json.success && json.data) {
-    return json.data.map((m: any) => ({
-      id: m._id || m.id,
-      name: m.name,
-      price: m.price,
-      station: m.station,
-      category: m.category,
-      isAvailable: m.isAvailable,
-      prepTimeMin: m.prepTimeMin,
-    }));
-  }
-  return [];
-}
-
-export async function fetchOrders(): Promise<Order[]> {
-  const res = await fetch(`${serverUrl}/api/v1/orders?status=open`);
-  const json = await res.json();
-  if (json.success && json.data) {
-    return json.data.map((o: any) => ({
-      id: o._id || o.orderNumber,
-      orderNumber: o.orderNumber,
-      tableName: o.tableName,
-      guestName: o.guestName,
-      guestPhone: o.guestPhone,
-      staffName: o.staffName,
-      items: o.items || [],
-      notes: o.notes,
-      shishaAdvance: o.shishaAdvance,
-      duration: o.duration,
-      closed: o.closed,
-      taxPercent: o.taxPercent,
-      discountAmount: o.discountAmount,
-      createdAt: o.createdAt,
-    }));
-  }
-  return [];
-}
-
-export async function fetchKOTs(): Promise<KOT[]> {
-  const res = await fetch(`${serverUrl}/api/v1/kots?status=ACTIVE_ALL`);
-  const json = await res.json();
-  if (json.success && json.data) {
-    return json.data.map((k: any) => ({
-      id: k._id || k.kotNumber,
-      kotNumber: k.kotNumber,
-      orderNumber: k.orderNumber,
-      tableName: k.tableName,
-      guestName: k.guestName,
-      station: k.station,
-      items: k.items || [],
-      notes: k.notes,
-      duration: k.duration,
-      status: k.status,
-      createdAt: k.createdAt,
-    }));
-  }
-  return [];
-}
-
-export async function submitMobileOrder(params: {
-  tableName: string;
-  guestName?: string;
-  guestPhone?: string;
-  staffName?: string;
-  items: { name: string; price: number; station: string; category: string; qty: number; notes?: string }[];
-  notes?: string;
-  shishaAdvance?: number;
-  duration?: number;
-}): Promise<{ success: boolean; data?: any; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+    res = await fetch(`${serverUrl}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
-    const json = await res.json();
-    return json;
   } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
-}
-
-export async function addItemsToRunningOrder(params: {
-  orderId: string;
-  newItems: { name: string; price: number; station: string; category: string; qty: number; notes?: string }[];
-  notes?: string;
-}): Promise<{ success: boolean; data?: any; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/orders`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const json = await res.json();
-    return json;
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
-}
-
-export async function extendShishaPot(kotId: string, addMinutes: number = 15) {
-  const res = await fetch(`${serverUrl}/api/v1/shisha`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kotId, addMinutes }),
-  });
-  return res.json();
-}
-
-export async function transferTableOrder(params: {
-  orderId: string;
-  fromTable: string;
-  toTable: string;
-  staff?: string;
-  reason?: string;
-}): Promise<{ success: boolean; message?: string; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/orders/transfer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
-}
-
-export async function voidOrderItem(params: {
-  orderId: string;
-  itemIndex: number;
-  voidReason: string;
-  pin?: string;
-  staff?: string;
-}): Promise<{ success: boolean; message?: string; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/orders/void`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
-}
-
-export async function updateKOTStatus(
-  kotId: string,
-  status: string
-): Promise<{ success: boolean; data?: any; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/kots`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: kotId, status }),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
-}
-
-export async function fetchStaffUsers(): Promise<StaffUser[]> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/auth`);
-    const json = await res.json();
-    if (json.success && json.data) {
-      return json.data.map((u: any) => ({
-        id: u._id || u.id,
-        name: u.name,
-        role: u.role,
-        phone: u.phone,
-      }));
+    if (err?.name === 'AbortError') {
+      throw new ApiError(0, 'The server did not respond. Check Wi-Fi and the server address.');
     }
-    return [];
+    throw new ApiError(0, 'Cannot reach the server. Check Wi-Fi and the server address.');
+  } finally {
+    clearTimeout(timer);
+  }
+
+  let json: ApiEnvelope<T> | null = null;
+  try {
+    json = (await res.json()) as ApiEnvelope<T>;
   } catch {
-    return [];
+    json = null;
   }
+
+  if (!res.ok || !json || json.success === false) {
+    const message = json?.error || json?.message || `Server error (${res.status})`;
+    if (res.status === 401 && !skipUnauthorizedHook) unauthorizedHandler?.(tokenUsed ?? null);
+    throw new ApiError(res.ok ? 500 : res.status, message);
+  }
+  return json;
 }
 
-export async function verifyStaffPin(pin: string): Promise<{ success: boolean; data?: StaffUser; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
-    });
-    const json = await res.json();
-    return json;
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
+export function errorMessage(err: unknown, fallback = 'Something went wrong'): string {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
 }
 
-export async function resetStaffPin(params: {
-  userId?: string;
-  staffName?: string;
-  currentPin?: string;
-  newPin: string;
-}): Promise<{ success: boolean; message?: string; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/auth/reset-pin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    const json = await res.json();
-    return json;
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
+export function errorStatus(err: unknown): number {
+  return err instanceof ApiError ? err.status : 0;
+}
+
+// ---------- Auth & devices ----------
+
+export async function fetchAuthMe(): Promise<AuthState> {
+  const json = await request<AuthState>('/api/v1/auth/me', { skipUnauthorizedHook: true });
+  const data = json.data;
+  return {
+    setupRequired: !!data?.setupRequired,
+    user: data?.user ?? null,
+    device: data?.device ?? null,
+    permissions: data?.permissions ?? [],
+  };
+}
+
+export async function pairDevice(code: string): Promise<{ device: AuthDevice; deviceToken: string }> {
+  const json = await request<AuthDevice>('/api/v1/devices/pair', {
+    method: 'POST',
+    body: { code },
+    skipUnauthorizedHook: true,
+  });
+  if (!json.data || !json.deviceToken) throw new ApiError(500, 'Pairing failed: the server did not return a device token');
+  return { device: json.data, deviceToken: json.deviceToken };
+}
+
+export async function unpairDevice(): Promise<void> {
+  await request('/api/v1/devices/pair', { method: 'DELETE', skipUnauthorizedHook: true });
+}
+
+/** Names for the lock screen picker (needs a paired device) */
+export async function fetchSignInStaff(): Promise<StaffUser[]> {
+  const json = await request<StaffUser[]>('/api/v1/auth/staff', { skipUnauthorizedHook: true });
+  return (json.data ?? []).map((u) => ({ id: u.id, name: u.name, role: u.role }));
+}
+
+export async function signInWithPin(userId: string, pin: string): Promise<{ user: StaffUser; sessionToken: string }> {
+  const json = await request<{ user: StaffUser }>('/api/v1/auth/pin', {
+    method: 'POST',
+    body: { userId, pin },
+    skipUnauthorizedHook: true,
+    sessionTokenOverride: null,
+  });
+  if (!json.data?.user || !json.sessionToken) throw new ApiError(500, 'Sign in failed: no session returned');
+  return { user: json.data.user, sessionToken: json.sessionToken };
+}
+
+/** Revokes a session on the server. Pass the token explicitly: it is usually cleared locally first. */
+export async function logoutSession(token: string): Promise<void> {
+  await request('/api/v1/auth/logout', { method: 'POST', skipUnauthorizedHook: true, sessionTokenOverride: token });
+}
+
+export async function changeOwnPin(currentPin: string, newPin: string): Promise<void> {
+  // 401 here means "current PIN is incorrect", so don't treat it as a lost session
+  await request('/api/v1/auth/change-pin', {
+    method: 'POST',
+    body: { currentPin, newPin },
+    skipUnauthorizedHook: true,
+  });
 }
 
 export async function pingServer(): Promise<{ success: boolean; latencyMs: number; message: string }> {
   const start = Date.now();
   try {
-    const res = await fetch(`${serverUrl}/api/v1/init`, { method: 'GET' });
-    const latencyMs = Date.now() - start;
-    const json = await res.json();
-    return {
-      success: json.success,
-      latencyMs,
-      message: json.message || 'Connected',
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      latencyMs: Date.now() - start,
-      message: err.message || 'Connection failed',
-    };
+    await request('/api/v1/auth/me', { skipUnauthorizedHook: true, timeoutMs: 5_000 });
+    return { success: true, latencyMs: Date.now() - start, message: 'Connected' };
+  } catch (err) {
+    return { success: false, latencyMs: Date.now() - start, message: errorMessage(err, 'Connection failed') };
   }
 }
 
-export async function settleOrderBill(params: {
+// ---------- Data ----------
+
+export async function fetchTables(): Promise<TableItem[]> {
+  const json = await request<any[]>('/api/v1/tables');
+  return (json.data ?? []).map((t: any) => ({
+    id: t._id || t.name,
+    name: t.name,
+    floor: t.floor,
+    type: t.type,
+    capacity: t.capacity,
+    status: t.status,
+    currentOrderId: t.currentOrderId,
+    hourlyRate: t.hourlyRate,
+  }));
+}
+
+export async function fetchMenu(): Promise<MenuItem[]> {
+  const json = await request<any[]>('/api/v1/menu');
+  return (json.data ?? []).map((m: any) => ({
+    id: m._id || m.id,
+    name: m.name,
+    price: m.price,
+    station: m.station,
+    category: m.category,
+    isAvailable: m.isAvailable,
+    prepTimeMin: m.prepTimeMin,
+  }));
+}
+
+export async function fetchOrders(): Promise<Order[]> {
+  const json = await request<any[]>('/api/v1/orders?status=open');
+  return (json.data ?? []).map((o: any) => ({
+    id: o._id || o.orderNumber,
+    orderNumber: o.orderNumber,
+    tableName: o.tableName,
+    guestName: o.guestName,
+    guestPhone: o.guestPhone,
+    staffName: o.staffName,
+    items: o.items || [],
+    notes: o.notes,
+    shishaAdvance: o.shishaAdvance,
+    duration: o.duration,
+    closed: o.closed,
+    taxPercent: o.taxPercent,
+    discountAmount: o.discountAmount,
+    createdAt: o.createdAt,
+  }));
+}
+
+export async function fetchKOTs(): Promise<KOT[]> {
+  const json = await request<any[]>('/api/v1/kots?status=ACTIVE_ALL');
+  return (json.data ?? []).map((k: any) => ({
+    id: k._id || k.kotNumber,
+    kotNumber: k.kotNumber,
+    orderNumber: k.orderNumber,
+    tableName: k.tableName,
+    guestName: k.guestName,
+    station: k.station,
+    items: k.items || [],
+    notes: k.notes,
+    duration: k.duration,
+    status: k.status,
+    createdAt: k.createdAt,
+  }));
+}
+
+// ---------- Actions (all throw ApiError on failure) ----------
+
+type OrderLine = { name: string; price: number; station: string; category: string; qty: number; notes?: string };
+
+/** The server records the signed-in staff member on the order */
+export function submitMobileOrder(params: {
+  tableName: string;
+  guestName?: string;
+  guestPhone?: string;
+  items: OrderLine[];
+  notes?: string;
+  shishaAdvance?: number;
+  duration?: number;
+}) {
+  return request('/api/v1/orders', { method: 'POST', body: params });
+}
+
+export function addItemsToRunningOrder(params: { orderId: string; newItems: OrderLine[]; notes?: string }) {
+  return request('/api/v1/orders', { method: 'PATCH', body: params });
+}
+
+export function extendShishaPot(kotId: string, addMinutes: number = 15) {
+  return request('/api/v1/shisha', { method: 'POST', body: { kotId, addMinutes } });
+}
+
+export function transferTableOrder(params: { orderId: string; fromTable: string; toTable: string; reason?: string }) {
+  return request('/api/v1/orders/transfer', { method: 'POST', body: params });
+}
+
+/** `pin` is a manager's approval PIN, only needed when the signed-in user lacks `order.void` */
+export function voidOrderItem(params: { orderId: string; itemIndex: number; voidReason: string; pin?: string }) {
+  return request('/api/v1/orders/void', { method: 'POST', body: params });
+}
+
+export function voidWholeOrder(params: { orderId: string; table: string; voidReason: string; pin?: string }) {
+  return request('/api/v1/orders/void', { method: 'POST', body: { ...params, voidEntireOrder: true } });
+}
+
+export function updateKOTStatus(kotId: string, status: string) {
+  return request('/api/v1/kots', { method: 'PATCH', body: { id: kotId, status } });
+}
+
+export interface PaymentLine {
+  amount: number;
+  method: string;
+  creditRef?: string;
+}
+
+/** `approvalPin` is a manager's PIN for discounts above the cashier limit */
+export function settleOrderBill(params: {
   orderId: string;
-  payment?: { amount: number; method: string; creditRef?: string };
-  payments?: { amount: number; method: string; creditRef?: string }[];
+  payment?: PaymentLine;
+  payments?: PaymentLine[];
   discount?: number;
   discountType?: string;
   discountReason?: string;
   taxPercent?: number;
   closeOrder?: boolean;
-}): Promise<{ success: boolean; data?: any; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/billing`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
+  approvalPin?: string;
+}) {
+  return request('/api/v1/billing', { method: 'POST', body: params });
 }
 
-export async function mergeTableOrders(params: {
-  sourceTable: string;
-  targetTable: string;
-  staff?: string;
-}): Promise<{ success: boolean; message?: string; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/orders/merge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
+export function mergeTableOrders(params: { sourceTable: string; targetTable: string }) {
+  return request('/api/v1/orders/merge', { method: 'POST', body: params });
 }
 
-export async function voidWholeOrder(params: {
-  orderId: string;
-  table: string;
-  voidReason: string;
-  pin?: string;
-  staff?: string;
-}): Promise<{ success: boolean; message?: string; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/orders/void`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...params,
-        voidEntireOrder: true,
-      }),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
+export function toggleMenuItemAvailability(id: string, isAvailable: boolean) {
+  return request('/api/v1/menu', { method: 'PATCH', body: { id, isAvailable } });
 }
 
-export async function toggleMenuItemAvailability(
-  id: string,
-  isAvailable: boolean
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/menu`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, isAvailable }),
-    });
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
+export function fetchShiftSummary() {
+  return request('/api/v1/shifts');
 }
-
-export async function fetchShiftSummary(): Promise<{ success: boolean; data?: any; error?: string }> {
-  try {
-    const res = await fetch(`${serverUrl}/api/v1/shifts`);
-    return await res.json();
-  } catch (err: any) {
-    return { success: false, error: err.message || 'Network error' };
-  }
-}
-
-

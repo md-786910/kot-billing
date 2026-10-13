@@ -23,7 +23,7 @@ export const TableMergeModal: React.FC<TableMergeModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { tables, orders, selectedTable, mergeTables } = usePOS();
+  const { tables, orders, selectedTable, mergeTables, markActivity } = usePOS();
   const [isMerging, setIsMerging] = useState(false);
 
   // Find other occupied tables
@@ -72,7 +72,7 @@ export const TableMergeModal: React.FC<TableMergeModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
+      <View style={styles.modalOverlay} onTouchStart={markActivity}>
         <View style={styles.modalCard}>
           <View style={styles.headerRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

@@ -1,144 +1,253 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
-import { COLORS } from '../constants/theme';
+import { COLORS, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { errorMessage, errorStatus, fetchSignInStaff } from '../services/api';
+import { StaffUser } from '../types';
+
+const MIN_PIN = 4;
+const MAX_PIN = 6;
+const KEY_ROWS = [
+  ['1', '2', '3'],
+  ['4', '5', '6'],
+  ['7', '8', '9'],
+];
 
 export const TerminalLockScreen: React.FC = () => {
-  const { unlockTerminal, currentStaff } = usePOS();
+  const { signIn, checkAuth, device, authNotice } = usePOS();
+
+  const [staff, setStaff] = useState<StaffUser[]>([]);
+  const [staffLoading, setStaffLoading] = useState(true);
+  const [staffError, setStaffError] = useState<string | null>(null);
+
+  const [selected, setSelected] = useState<StaffUser | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleDigit = (digit: string) => {
-    if (pin.length < 4) {
-      const nextPin = pin + digit;
-      setPin(nextPin);
-      setError(null);
-      if (nextPin.length === 4) {
-        attemptUnlock(nextPin);
-      }
+  const loadStaff = useCallback(async () => {
+    setStaffLoading(true);
+    setStaffError(null);
+    try {
+      setStaff(await fetchSignInStaff());
+    } catch (err) {
+      setStaffError(errorMessage(err, 'Could not load staff'));
+      // Device token rejected: let the app decide whether to show pairing
+      if (errorStatus(err) === 401) void checkAuth();
+    } finally {
+      setStaffLoading(false);
     }
+  }, [checkAuth]);
+
+  useEffect(() => {
+    loadStaff();
+  }, [loadStaff]);
+
+  // If boot couldn't reach the server we don't know this device yet: re-check pairing too
+  const retry = () => {
+    if (!device) void checkAuth();
+    loadStaff();
   };
 
-  const handleDelete = () => {
-    setPin((p) => p.slice(0, -1));
+  // Functional updates so quick taps never drop digits
+  const pressDigit = (digit: string) => {
     setError(null);
+    setPin((p) => (p.length >= MAX_PIN ? p : p + digit));
+  };
+  const pressDelete = () => {
+    setError(null);
+    setPin((p) => p.slice(0, -1));
+  };
+  const pressClear = () => {
+    setError(null);
+    setPin('');
   };
 
-  const handleClear = () => {
+  const chooseStaff = (user: StaffUser) => {
+    setSelected(user);
     setPin('');
     setError(null);
   };
 
-  const attemptUnlock = async (pinToTry: string) => {
-    setLoading(true);
+  const backToNames = () => {
+    setSelected(null);
+    setPin('');
     setError(null);
-    const res = await unlockTerminal(pinToTry);
-    setLoading(false);
+  };
+
+  const submit = async () => {
+    if (!selected || pin.length < MIN_PIN || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    const res = await signIn(selected.id, pin);
+    // On success this screen unmounts
     if (!res.success) {
-      setError(res.error || 'Invalid Staff PIN');
+      setSubmitting(false);
       setPin('');
+      setError(res.error || 'Incorrect PIN');
     }
   };
 
-  const quickPresets = [
-    { label: 'Admin (1111)', pin: '1111' },
-    { label: 'Cashier (2222)', pin: '2222' },
-    { label: 'Captain (3333)', pin: '3333' },
-    { label: 'Chef (4444)', pin: '4444' },
-    { label: 'Shisha (5555)', pin: '5555' },
-  ];
+  const canSubmit = !!selected && pin.length >= MIN_PIN && !submitting;
+  const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
     <View style={styles.container}>
-      <View style={styles.lockCard}>
-        {/* Brand Icon */}
-        <View style={styles.iconCircle}>
-          <MaterialCommunityIcons name="fire" size={32} color={COLORS.gold} />
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.brandRow}>
+          <View style={styles.iconCircle}>
+            <MaterialCommunityIcons name="fire" size={28} color={COLORS.gold} />
+          </View>
+          <Text style={styles.brandTitle}>LAYALI</Text>
         </View>
 
-        <Text style={styles.brandTitle}>LAYALI POS MOBILE</Text>
-        <Text style={styles.lockSubtitle}>Terminal Locked • Enter Staff PIN</Text>
+        {!selected ? (
+          <>
+            <Text style={styles.heading}>Who's signing in?</Text>
+            {authNotice && !staffError ? <Text style={styles.notice}>{authNotice}</Text> : null}
 
-        {/* Current staff pill */}
-        <View style={styles.staffPill}>
-          <Text style={styles.staffPillText}>Active User: {currentStaff.name}</Text>
-        </View>
-
-        {/* PIN Dots */}
-        <View style={styles.dotsRow}>
-          {[0, 1, 2, 3].map((idx) => (
-            <View
-              key={idx}
-              style={[
-                styles.dot,
-                pin.length > idx && styles.dotFilled,
-                error && styles.dotError,
-              ]}
-            />
-          ))}
-        </View>
-
-        {/* Error message */}
-        {error && <Text style={styles.errorText}>{error}</Text>}
-
-        {/* Number Keypad */}
-        <View style={styles.keypad}>
-          {[['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9']].map((row, rIdx) => (
-            <View key={rIdx} style={styles.keypadRow}>
-              {row.map((d) => (
-                <TouchableOpacity
-                  key={d}
-                  style={styles.keyBtn}
-                  onPress={() => handleDigit(d)}
-                  disabled={loading}
-                >
-                  <Text style={styles.keyDigit}>{d}</Text>
+            {staffLoading ? (
+              <ActivityIndicator style={{ marginTop: 32 }} color={COLORS.gold} />
+            ) : staffError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorBoxText}>{staffError}</Text>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={retry}>
+                  <Feather name="refresh-cw" size={16} color={COLORS.textPrimary} />
+                  <Text style={styles.secondaryBtnText}>Retry</Text>
                 </TouchableOpacity>
+              </View>
+            ) : staff.length === 0 ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.emptyText}>
+                  No staff can sign in yet. The owner adds staff and their PINs in the web app.
+                </Text>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={loadStaff}>
+                  <Feather name="refresh-cw" size={16} color={COLORS.textPrimary} />
+                  <Text style={styles.secondaryBtnText}>Refresh</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.staffGrid}>
+                {staff.map((user) => (
+                  <TouchableOpacity
+                    key={user.id}
+                    style={styles.staffTile}
+                    onPress={() => chooseStaff(user)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Sign in as ${user.name}`}
+                  >
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{user.name.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.staffName} numberOfLines={1}>
+                        {user.name}
+                      </Text>
+                      <Text style={styles.staffRole} numberOfLines={1}>
+                        {roleLabel(user.role)}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </>
+        ) : (
+          <View style={styles.pinArea}>
+            <View style={styles.selectedRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{selected.name.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.staffName} numberOfLines={1}>
+                  {selected.name}
+                </Text>
+                <Text style={styles.staffRole}>{roleLabel(selected.role)}</Text>
+              </View>
+              <TouchableOpacity style={styles.changeBtn} onPress={backToNames} disabled={submitting}>
+                <Text style={styles.changeBtnText}>Change</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.pinLabel}>Enter your PIN</Text>
+            <View style={styles.dotsRow} accessibilityLabel={`${pin.length} digits entered`}>
+              {Array.from({ length: dotCount }).map((_, idx) => (
+                <View
+                  key={idx}
+                  style={[styles.dot, pin.length > idx && styles.dotFilled, !!error && styles.dotError]}
+                />
               ))}
             </View>
-          ))}
-          <View style={styles.keypadRow}>
-            <TouchableOpacity style={styles.keyBtnAux} onPress={handleClear} disabled={loading}>
-              <Text style={styles.keyAuxText}>CLR</Text>
-            </TouchableOpacity>
+            <Text style={styles.errorText}>{error ?? ' '}</Text>
 
-            <TouchableOpacity style={styles.keyBtn} onPress={() => handleDigit('0')} disabled={loading}>
-              <Text style={styles.keyDigit}>0</Text>
-            </TouchableOpacity>
+            <View style={styles.keypad}>
+              {KEY_ROWS.map((row, rIdx) => (
+                <View key={rIdx} style={styles.keypadRow}>
+                  {row.map((d) => (
+                    <TouchableOpacity
+                      key={d}
+                      style={styles.keyBtn}
+                      onPress={() => pressDigit(d)}
+                      disabled={submitting}
+                      accessibilityLabel={d}
+                    >
+                      <Text style={styles.keyDigit}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ))}
+              <View style={styles.keypadRow}>
+                <TouchableOpacity
+                  style={styles.keyBtnAux}
+                  onPress={pressClear}
+                  disabled={submitting}
+                  accessibilityLabel="Clear"
+                >
+                  <Text style={styles.keyAuxText}>Clear</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.keyBtn}
+                  onPress={() => pressDigit('0')}
+                  disabled={submitting}
+                  accessibilityLabel="0"
+                >
+                  <Text style={styles.keyDigit}>0</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.keyBtnAux}
+                  onPress={pressDelete}
+                  disabled={submitting}
+                  accessibilityLabel="Delete"
+                >
+                  <Feather name="delete" size={22} color={COLORS.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-            <TouchableOpacity style={styles.keyBtnAux} onPress={handleDelete} disabled={loading}>
-              <Feather name="delete" size={20} color={COLORS.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Quick Role Shortcuts */}
-        <Text style={styles.presetHeading}>Quick Role Switch:</Text>
-        <View style={styles.presetsGrid}>
-          {quickPresets.map((p) => (
             <TouchableOpacity
-              key={p.pin}
-              style={styles.presetChip}
-              onPress={() => {
-                setPin(p.pin);
-                attemptUnlock(p.pin);
-              }}
-              disabled={loading}
+              style={[styles.unlockBtn, !canSubmit && styles.unlockBtnDisabled]}
+              onPress={submit}
+              disabled={!canSubmit}
+              accessibilityRole="button"
             >
-              <Text style={styles.presetText}>{p.label}</Text>
+              {submitting ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <>
+                  <Feather name="unlock" size={18} color="#ffffff" />
+                  <Text style={styles.unlockText}>Unlock</Text>
+                </>
+              )}
             </TouchableOpacity>
-          ))}
-        </View>
-
-        {loading && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="small" color={COLORS.gold} />
-            <Text style={styles.loadingText}>Verifying Credentials...</Text>
           </View>
         )}
-      </View>
+      </ScrollView>
+
+      <Text style={styles.deviceName} numberOfLines={1}>
+        {device ? device.name : ' '}
+      </Text>
     </View>
   );
 };
@@ -147,61 +256,163 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bgPrimary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
   },
-  lockCard: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: COLORS.bgCard,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-    padding: 24,
+  scrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 32,
+    paddingBottom: 16,
+  },
+  brandRow: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   iconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(212, 175, 55, 0.12)',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: COLORS.goldSubtle,
     borderWidth: 2,
     borderColor: COLORS.gold,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   brandTitle: {
-    color: '#ffffff',
-    fontSize: 16,
+    color: COLORS.textPrimary,
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: 1.5,
+    letterSpacing: 4,
   },
-  lockSubtitle: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    marginTop: 4,
+  heading: {
+    color: COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
     marginBottom: 8,
   },
-  staffPill: {
-    backgroundColor: COLORS.bgSurface,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    marginBottom: 16,
+  notice: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  staffPillText: {
+  staffGrid: {
+    width: '100%',
+    maxWidth: 480,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+    marginTop: 8,
+  },
+  staffTile: {
+    width: '48.5%',
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.bgCard,
+    borderWidth: 1,
+    borderColor: COLORS.borderDefault,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.goldSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
     color: COLORS.gold,
-    fontSize: 11,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  staffName: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
     fontWeight: '700',
+  },
+  staffRole: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  errorBox: {
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 24,
+  },
+  errorBoxText: {
+    color: '#f87171',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  emptyText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  secondaryBtn: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: COLORS.bgSurface,
+    borderWidth: 1,
+    borderColor: COLORS.borderDefault,
+  },
+  secondaryBtnText: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pinArea: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+  },
+  selectedRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: COLORS.bgCard,
+    borderWidth: 1,
+    borderColor: COLORS.borderDefault,
+    borderRadius: 14,
+    paddingLeft: 12,
+    paddingVertical: 8,
+    marginBottom: 20,
+  },
+  changeBtn: {
+    minHeight: 48,
+    minWidth: 48,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  changeBtnText: {
+    color: COLORS.gold,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pinLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
   },
   dotsRow: {
     flexDirection: 'row',
-    gap: 16,
-    marginVertical: 14,
+    gap: 14,
+    marginTop: 14,
   },
   dot: {
     width: 14,
@@ -209,7 +420,6 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     borderWidth: 1.5,
     borderColor: COLORS.textMuted,
-    backgroundColor: 'transparent',
   },
   dotFilled: {
     borderColor: COLORS.gold,
@@ -217,28 +427,28 @@ const styles = StyleSheet.create({
   },
   dotError: {
     borderColor: '#ef4444',
-    backgroundColor: '#ef4444',
   },
   errorText: {
-    color: '#ef4444',
-    fontSize: 12,
-    fontWeight: '700',
+    color: '#f87171',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    minHeight: 20,
+    marginTop: 10,
     marginBottom: 10,
   },
   keypad: {
-    width: '100%',
-    gap: 10,
-    marginTop: 6,
+    gap: 12,
   },
   keypadRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 14,
+    gap: 20,
   },
   keyBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: COLORS.bgSurface,
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
@@ -246,60 +456,46 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   keyDigit: {
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '700',
+    color: COLORS.textPrimary,
+    fontSize: 24,
+    fontWeight: '600',
   },
   keyBtnAux: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
   },
   keyAuxText: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  presetHeading: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 18,
-    marginBottom: 8,
-  },
-  presetsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  presetChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  presetText: {
     color: COLORS.textSecondary,
-    fontSize: 10,
+    fontSize: 14,
     fontWeight: '600',
   },
-  loadingOverlay: {
+  unlockBtn: {
+    width: '100%',
+    minHeight: 52,
+    marginTop: 20,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    marginTop: 12,
   },
-  loadingText: {
-    color: COLORS.gold,
-    fontSize: 11,
-    fontWeight: '600',
+  unlockBtnDisabled: {
+    opacity: 0.4,
+  },
+  unlockText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  deviceName: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
 });

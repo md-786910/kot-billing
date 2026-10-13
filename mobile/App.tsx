@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { StyleSheet, SafeAreaView, StatusBar, View } from 'react-native';
+import { StyleSheet, SafeAreaView, StatusBar, View, ActivityIndicator } from 'react-native';
 import { POSProvider, usePOS } from './src/context/POSContext';
 import { Header } from './src/components/Header';
 import { BottomNav, TabKey } from './src/components/BottomNav';
-import { ServerConfigModal } from './src/components/ServerConfigModal';
+import { PairingScreen } from './src/components/PairingScreen';
 import { TerminalLockScreen } from './src/components/TerminalLockScreen';
 import { TablesScreen } from './src/screens/TablesScreen';
 import { OrderScreen } from './src/screens/OrderScreen';
@@ -12,62 +12,55 @@ import { ShishaScreen } from './src/screens/ShishaScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { COLORS } from './src/constants/theme';
 
+// Only mounted while a staff member is signed in, so each sign-in starts on the Tables tab
 function MainApp() {
   const [activeTab, setActiveTab] = useState<TabKey>('tables');
-  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
-  const { setSelectedTable, isLocked } = usePOS();
+  const { setSelectedTable } = usePOS();
 
-  const handleSelectTableAndOrder = (tableName: string) => {
+  const handleSelectTable = (tableName: string) => {
     setSelectedTable(tableName);
     setActiveTab('order');
   };
-
-  const handleSelectTableAndBill = (tableName: string) => {
-    setSelectedTable(tableName);
-    setActiveTab('order');
-  };
-
-  // If terminal is locked, display PIN unlock screen
-  if (isLocked) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.bgPrimary} />
-        <TerminalLockScreen />
-      </SafeAreaView>
-    );
-  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bgPrimary} />
+    <>
+      <Header onOpenSettings={() => setActiveTab('settings')} />
 
-      {/* Top Header */}
-      <Header onOpenConfig={() => setActiveTab('settings')} />
-
-      {/* Screen Router */}
       <View style={styles.content}>
         {activeTab === 'tables' && (
-          <TablesScreen
-            onSelectTableAndOrder={handleSelectTableAndOrder}
-            onSelectTableAndBill={handleSelectTableAndBill}
-          />
+          <TablesScreen onSelectTableAndOrder={handleSelectTable} onSelectTableAndBill={handleSelectTable} />
         )}
-        {activeTab === 'order' && (
-          <OrderScreen onOrderSuccess={() => setActiveTab('kots')} />
-        )}
+        {activeTab === 'order' && <OrderScreen onOrderSuccess={() => setActiveTab('kots')} />}
         {activeTab === 'kots' && <KOTsScreen />}
         {activeTab === 'shisha' && <ShishaScreen />}
         {activeTab === 'settings' && <SettingsScreen />}
       </View>
 
-      {/* Bottom Navigation */}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+    </>
+  );
+}
 
-      {/* Server Config Modal */}
-      <ServerConfigModal
-        visible={showConfigModal}
-        onClose={() => setShowConfigModal(false)}
-      />
+function Root() {
+  const { authStatus, markActivity } = usePOS();
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.bgPrimary} />
+      {/* Every touch resets the inactivity auto-lock timer */}
+      <View style={styles.container} onTouchStart={markActivity}>
+        {authStatus === 'booting' ? (
+          <View style={styles.splash}>
+            <ActivityIndicator size="large" color={COLORS.gold} />
+          </View>
+        ) : authStatus === 'unpaired' ? (
+          <PairingScreen />
+        ) : authStatus === 'locked' ? (
+          <TerminalLockScreen />
+        ) : (
+          <MainApp />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -75,7 +68,7 @@ function MainApp() {
 export default function App() {
   return (
     <POSProvider>
-      <MainApp />
+      <Root />
     </POSProvider>
   );
 }
@@ -87,5 +80,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  splash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

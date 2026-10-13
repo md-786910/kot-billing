@@ -1,36 +1,48 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../constants/theme';
+import { MaterialCommunityIcons, Ionicons, Feather } from '@expo/vector-icons';
+import { COLORS, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 
 interface HeaderProps {
-  onOpenConfig: () => void;
+  onOpenSettings: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenConfig }) => {
-  const { isConnected, currentStaff } = usePOS();
+export const Header: React.FC<HeaderProps> = ({ onOpenSettings }) => {
+  const { isConnected, currentStaff, lock } = usePOS();
 
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <MaterialCommunityIcons name="fire" size={24} color={COLORS.gold} />
-        <View>
+        <View style={{ flexShrink: 1 }}>
           <Text style={styles.headerTitle}>LAYALI POS</Text>
-          <Text style={styles.headerSubtitle}>
-            {currentStaff.name} • {currentStaff.role}
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {currentStaff ? `${currentStaff.name} • ${roleLabel(currentStaff.role)}` : ''}
           </Text>
         </View>
       </View>
 
-      <TouchableOpacity
-        style={[styles.connBadge, isConnected ? styles.connOnline : styles.connOffline]}
-        onPress={onOpenConfig}
-      >
-        <View style={[styles.dot, { backgroundColor: isConnected ? COLORS.vacant : COLORS.occupied }]} />
-        <Text style={styles.connText}>{isConnected ? 'Online' : 'Offline'}</Text>
-        <Ionicons name="settings-outline" size={13} color={COLORS.textMuted} style={{ marginLeft: 4 }} />
-      </TouchableOpacity>
+      <View style={styles.headerRight}>
+        <TouchableOpacity
+          style={[styles.connBadge, isConnected ? styles.connOnline : styles.connOffline]}
+          onPress={onOpenSettings}
+          accessibilityLabel={`${isConnected ? 'Online' : 'Offline'}. Open settings`}
+        >
+          <View style={[styles.dot, { backgroundColor: isConnected ? COLORS.vacant : COLORS.occupied }]} />
+          <Text style={styles.connText}>{isConnected ? 'Online' : 'Offline'}</Text>
+          <Ionicons name="settings-outline" size={14} color={COLORS.textMuted} style={{ marginLeft: 4 }} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.lockBtn}
+          onPress={() => lock()}
+          accessibilityRole="button"
+          accessibilityLabel="Lock"
+        >
+          <Feather name="lock" size={18} color={COLORS.textSecondary} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -41,7 +53,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderSubtle,
     backgroundColor: COLORS.bgSecondary,
@@ -50,6 +62,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  lockBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bgSurface,
+    borderWidth: 1,
+    borderColor: COLORS.borderDefault,
   },
   headerTitle: {
     fontSize: 16,
@@ -58,15 +86,15 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   headerSubtitle: {
-    fontSize: 10,
+    fontSize: 12,
     color: COLORS.textMuted,
     marginLeft: 4,
   },
   connBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    minHeight: 40,
     borderRadius: 20,
     borderWidth: 1,
   },
@@ -85,7 +113,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   connText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: COLORS.textSecondary,
   },

@@ -54,7 +54,8 @@ layali/
    npm run dev
    ```
    Open [http://localhost:3000](http://localhost:3000) in your browser.
-   - Upon first load, the server automatically connects to MongoDB Atlas and auto-seeds all 11 tables, categories, menu items, settings, and staff credentials!
+   - Upon first load, the server connects to MongoDB and seeds the 11 tables, categories, menu items and settings.
+   - The first visit shows **Set up Layali POS**: create the owner account (username, password and a staff PIN).
 
 ---
 
@@ -69,10 +70,24 @@ layali/
    npx expo start
    ```
 3. Run on your physical phone (via Expo Go app) or on an Android/iOS emulator:
-   - Tap the top-right **Settings / Offline** badge inside the mobile app to set your machine's Wi-Fi IP address (e.g., `http://192.168.1.15:3000`) so the phone talks directly to your Next.js backend!
-   - Select a table, punch items, and hit **PUNCH KOT TO KITCHEN**. The order instantly pops up on the web Kitchen Display and Shisha master screens via real-time SSE!
+   - On the web, go to **Staff & Devices → Pair a device**, choose *Waiter phone*, and enter the server address (e.g. `http://192.168.1.15:3000`) and the 6-digit code in the app.
+   - Staff tap their name and enter their PIN, then punch orders. KOTs appear on the kitchen and shisha screens in real time.
 
 ---
+
+## Sign-in & Devices
+
+| Who | How they sign in |
+| :--- | :--- |
+| Owner / managers | Username + password, from any browser |
+| Staff on a paired terminal or phone | Tap their name + PIN (verified on the server; the session only works on that device) |
+| Kitchen / bar / shisha displays | Paired once as a *Station display*; they show only their station's tickets and need no sign-in |
+
+- Pair devices from **Staff & Devices** (one-time 6-digit code, valid 10 minutes), or use **Pair this browser** on the terminal itself. **Revoke** signs everyone out of that device immediately.
+- Terminals lock after 5 minutes idle (15 minutes for a password session). **Lock** switches staff.
+- Voids and discounts above 10% need a manager. Other staff can continue if a manager enters their PIN on the same screen. Every sign-in, void, discount and settlement is written to the audit log.
+- Five wrong PINs or passwords lock that account for 5 minutes. An admin can unlock it from **Staff & Devices**.
+- Cookies are `Secure` in production. If the restaurant server runs over plain HTTP on the local network, set `COOKIE_SECURE=false` in `.env.local`. Serving over HTTPS is preferred.
 
 ## Stations & User Roles
 

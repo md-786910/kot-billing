@@ -54,3 +54,19 @@ export const RADII = {
   lg: 14,
   full: 9999,
 };
+
+export const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Owner / Admin',
+  MANAGER: 'Manager',
+  CASHIER: 'Cashier',
+  CAPTAIN: 'Captain',
+  KITCHEN_CHEF: 'Kitchen',
+  SHISHA_MASTER: 'Shisha Master',
+};
+
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? role;
+}
+
+/** Example address shown as a placeholder only — never used as a default */
+export const SERVER_URL_PLACEHOLDER = 'http://192.168.1.50:3001';

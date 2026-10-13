@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useMemo, useCallback } from 'react';
+import { useAuth } from '@/components/auth/AuthProvider';
 import {
   MenuItem,
   CartItem,
@@ -105,7 +106,10 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [guestName, setGuestName] = useState<string>('');
   const [guestPhone, setGuestPhone] = useState<string>('');
-  const [staff, setStaff] = useState<string>('Captain 1');
+  const auth = useAuth();
+  const signedInName = auth.user?.name ?? '';
+  const canVoid = auth.can('order.void');
+  const [staff, setStaff] = useState<string>(signedInName);
   const [linkedBookingId, setLinkedBookingId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [shishaAdvance, setShishaAdvance] = useState<number>(0);
@@ -240,7 +244,7 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
     if (existingOrder) {
       setGuestName(existingOrder.guest || '');
       setGuestPhone(existingOrder.phone || '');
-      setStaff(existingOrder.staff || 'Captain 1');
+      setStaff(existingOrder.staff || signedInName);
       setLinkedBookingId(existingOrder.bookingId || '');
     } else {
       const matchedBooking = bookings.find(
@@ -803,7 +807,7 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
             </button>
 
             {/* Quick Settle Bill Button */}
-            {onGoToBilling && (
+            {onGoToBilling && auth.can('bill.settle') && (
               <button
                 onClick={() => onGoToBilling(currentActiveOrder.id)}
                 className="px-3.5 py-2 bg-emerald-950 hover:bg-emerald-900 text-emerald-200 border border-emerald-600 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95"
@@ -855,16 +859,10 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
             <label className="block font-semibold text-neutral-300 mb-1">
               Captain / Server
             </label>
-            <select
-              value={staff}
-              onChange={(e) => setStaff(e.target.value)}
-              className="w-full px-3 py-2 bg-[#1b1e2a] border border-neutral-700 rounded-lg text-white font-medium focus:outline-none focus:border-[#d4af37]"
-            >
-              <option value="Manager">Manager</option>
-              <option value="Captain 1">Captain 1</option>
-              <option value="Captain 2">Captain 2</option>
-              <option value="Sibtain">Sibtain</option>
-            </select>
+            {/* Orders are recorded under the signed-in staff member */}
+            <div className="w-full px-3 py-2 bg-[#1b1e2a] border border-neutral-800 rounded-lg text-white font-medium truncate">
+              {staff || signedInName}
+            </div>
           </div>
 
           <div>
@@ -1503,19 +1501,23 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                Manager / Supervisor PIN:
-              </label>
-              <input
-                type="password"
-                maxLength={4}
-                value={voidOrderPin}
-                onChange={(e) => setVoidOrderPin(e.target.value)}
-                placeholder="4-digit PIN (e.g. 1111)"
-                className="w-full px-3 py-2 bg-[#1b1e2a] border border-neutral-700 rounded-xl text-white text-xs tracking-widest font-mono text-center focus:outline-none focus:border-rose-400"
-              />
-            </div>
+            {!canVoid && (
+              <div>
+                <label className="block text-sm font-semibold text-neutral-300 mb-1.5">
+                  Manager PIN
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoComplete="off"
+                  value={voidOrderPin}
+                  onChange={(e) => setVoidOrderPin(e.target.value)}
+                  placeholder="Manager enters PIN"
+                  className="w-full h-12 px-3 bg-[#1b1e2a] border border-neutral-700 rounded-xl text-white text-base tracking-widest font-mono text-center focus:outline-none focus:border-rose-400"
+                />
+              </div>
+            )}
 
             <div className="pt-2 flex items-center justify-end gap-3">
               <button
@@ -1591,23 +1593,24 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
               </select>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-neutral-300 flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5 text-neutral-400" />
-                  Supervisor PIN:
+            {!canVoid && (
+              <div>
+                <label className="text-sm font-semibold text-neutral-300 flex items-center gap-1.5 mb-1.5">
+                  <Lock className="w-4 h-4 text-neutral-400" />
+                  Manager PIN
                 </label>
-                <span className="text-[10px] text-neutral-500 font-mono">Default Admin PIN: 1111</span>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoComplete="off"
+                  value={supervisorPin}
+                  onChange={(e) => setSupervisorPin(e.target.value)}
+                  placeholder="Manager enters PIN"
+                  className="w-full h-12 px-3 bg-[#1b1e2a] border border-neutral-700 rounded-xl text-white font-mono text-center tracking-widest text-base focus:outline-none focus:border-rose-500"
+                />
               </div>
-              <input
-                type="password"
-                maxLength={4}
-                value={supervisorPin}
-                onChange={(e) => setSupervisorPin(e.target.value)}
-                placeholder="Enter 4-digit PIN (1111)"
-                className="w-full px-3 py-2.5 bg-[#1b1e2a] border border-neutral-700 rounded-xl text-white font-mono text-center tracking-widest text-sm focus:outline-none focus:border-rose-500"
-              />
-            </div>
+            )}
 
             <div className="pt-2 flex items-center justify-end gap-3">
               <button
