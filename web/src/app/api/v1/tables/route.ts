@@ -1,0 +1,41 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { connectToDatabase } from '@/lib/mongodb';
+import { TableModel } from '@/models/Table';
+import { broadcastRealtimeEvent } from '@/lib/realtime';
+
+
+export async function GET() {
+  try {
+    await connectToDatabase();
+    // Fast lean query with projection
+    const tables = await TableModel.find().sort({ name: 1 }).lean();
+    return NextResponse.json({ success: true, data: tables });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    await connectToDatabase();
+    const body = await req.json();
+    const { id, name, status, currentOrderId } = body;
+
+    const query = id ? { _id: id } : { name };
+    const updated = await TableModel.findOneAndUpdate(
+      query,
+      { $set: { ...(status && { status }), ...(currentOrderId !== undefined && { currentOrderId }) } },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      return NextResponse.json({ success: false, error: 'Table not found' }, { status: 404 });
+    }
+
+    broadcastRealtimeEvent('TABLE_STATUS_CHANGED', updated);
+
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}

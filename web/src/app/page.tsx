@@ -1,0 +1,677 @@
+'use client';
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  MenuItem,
+  TableInfo,
+  Order,
+  PrivateBooking,
+  KOT,
+  AppSettings,
+  KOTStatus,
+  CartItem,
+  AuthUser,
+} from '@/types/pos';
+import { POSOrderView } from '@/components/POSOrderView';
+import { KOTQueueView } from '@/components/KOTQueueView';
+import { ShishaTimerView } from '@/components/ShishaTimerView';
+import { LiveOrdersView } from '@/components/LiveOrdersView';
+import { PrivateBookingsView } from '@/components/PrivateBookingsView';
+import { BillingView } from '@/components/BillingView';
+import { ShiftRegisterView } from '@/components/ShiftRegisterView';
+import { SettingsView } from '@/components/SettingsView';
+import { ThermalReceipt } from '@/components/ThermalReceipt';
+import { TopBar } from '@/components/TopBar';
+import { StaffAuthModal } from '@/components/StaffAuthModal';
+import { NavTabs, WebTabKey } from '@/components/NavTabs';
+import { playOrderChime, playTimerAlert } from '@/utils/audio';
+import { formatINR } from '@/utils/format';
+import {
+  Flame,
+  ChefHat,
+  Receipt,
+  Shield,
+  Layers,
+  Settings,
+  Clock,
+  Printer,
+  Volume2,
+  VolumeX,
+  Bell,
+  Sparkles,
+  Database,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Smartphone,
+} from 'lucide-react';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  loungeName: 'LAYALI SHISHA LOUNGE',
+  tagline: 'PREMIUM LOUNGE & CAFE',
+  address: 'Rooftop & 1st/2nd Floor, Main Boulevard',
+  phone: '+91 98765 43210',
+  gstNumber: '20AAAAA0000A1Z5',
+  taxPercent: 5,
+  soundAlerts: true,
+  shishaDefaultDuration: 45,
+};
+
+export default function POSHomePage() {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'connected' | 'connecting' | 'fallback'>('connecting');
+  const [dbMessage, setDbMessage] = useState<string>('Connecting to MongoDB Atlas...');
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [bookings, setBookings] = useState<PrivateBooking[]>([]);
+  const [kots, setKots] = useState<KOT[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [tables, setTables] = useState<TableInfo[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  const [activeTab, setActiveTab] = useState<WebTabKey>('order');
+
+  const [currentLocation, setCurrentLocation] = useState<string>('Table 1');
+  const [selectedBillingOrderId, setSelectedBillingOrderId] = useState<string>('');
+
+  const [printModal, setPrintModal] = useState<{
+    isOpen: boolean;
+    type: 'kot' | 'bill';
+    kot?: KOT;
+    order?: Order;
+    booking?: PrivateBooking;
+  }>({
+    isOpen: false,
+    type: 'kot',
+  });
+
+  const [currentTime, setCurrentTime] = useState<string>('');
+
+  // Staff Authentication & Terminal Session
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('layali_staff_user');
+      if (saved) {
+        setCurrentUser(JSON.parse(saved));
+      } else {
+        const defaultUser: AuthUser = {
+          id: 'admin_default',
+          name: 'Manager / Admin',
+          role: 'ADMIN',
+        };
+        setCurrentUser(defaultUser);
+        localStorage.setItem('layali_staff_user', JSON.stringify(defaultUser));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleLoginSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    try {
+      localStorage.setItem('layali_staff_user', JSON.stringify(user));
+    } catch {}
+    setIsAuthModalOpen(false);
+  };
+
+  const handleLockTerminal = () => {
+    setCurrentUser(null);
+    try {
+      localStorage.removeItem('layali_staff_user');
+    } catch {}
+    setIsAuthModalOpen(true);
+  };
+
+  // Clock
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      setCurrentTime(
+        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+    };
+    updateClock();
+    const interval = setInterval(updateClock, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch initial data from backend API
+  const refreshAllData = useCallback(async () => {
+    try {
+      setDbStatus('connecting');
+      // Initialize DB & auto-seed check
+      const initRes = await fetch('/api/v1/init');
+      const initData = await initRes.json();
+
+      if (!initData.success) {
+        setDbStatus('fallback');
+        setDbMessage(initData.error || 'Atlas connecting error');
+      } else {
+        setDbStatus('connected');
+        setDbMessage('MongoDB Atlas Connected');
+      }
+
+      // Fetch tables
+      const tablesRes = await fetch('/api/v1/tables');
+      const tablesJson = await tablesRes.json();
+      if (tablesJson.success && tablesJson.data) {
+        setTables(
+          tablesJson.data.map((t: any) => ({
+            id: t._id || t.name,
+            name: t.name,
+            floor: t.floor,
+            type: t.type,
+            capacity: t.capacity,
+            status: t.status,
+            currentOrderId: t.currentOrderId,
+            hourlyRate: t.hourlyRate,
+          }))
+        );
+      }
+
+      // Fetch menu
+      const menuRes = await fetch('/api/v1/menu');
+      const menuJson = await menuRes.json();
+      if (menuJson.success && menuJson.data) {
+        setMenu(
+          menuJson.data.map((m: any) => ({
+            id: m._id || m.id,
+            name: m.name,
+            price: m.price,
+            station: m.station,
+            category: m.category,
+            isAvailable: m.isAvailable,
+          }))
+        );
+      }
+
+      // Fetch orders
+      const ordersRes = await fetch('/api/v1/orders?status=all');
+      const ordersJson = await ordersRes.json();
+      if (ordersJson.success && ordersJson.data) {
+        setOrders(
+          ordersJson.data.map((o: any) => ({
+            id: o._id || o.orderNumber,
+            orderNumber: o.orderNumber,
+            location: o.tableName,
+            guest: o.guestName || '',
+            phone: o.guestPhone || '',
+            staff: o.staffName || 'Captain 1',
+            bookingId: o.bookingId || null,
+            items: o.items || [],
+            notes: o.notes || '',
+            shishaAdvance: o.shishaAdvance || 0,
+            duration: o.duration || 45,
+            created: o.createdAt || new Date().toISOString(),
+            payments: o.payments || [],
+            closed: o.closed || false,
+            taxPercent: o.taxPercent || 5,
+            discountAmount: o.discountAmount || 0,
+          }))
+        );
+      }
+
+      // Fetch KOTs
+      const kotsRes = await fetch('/api/v1/kots?status=All');
+      const kotsJson = await kotsRes.json();
+      if (kotsJson.success && kotsJson.data) {
+        setKots(
+          kotsJson.data.map((k: any) => ({
+            id: k.kotNumber || k._id,
+            kotNumber: k.kotNumber,
+            orderId: k.orderNumber || k.orderId,
+            location: k.tableName,
+            guest: k.guestName || '',
+            station: k.station,
+            items: k.items || [],
+            notes: k.notes || '',
+            duration: k.duration,
+            status: k.status,
+            created: k.createdAt || new Date().toISOString(),
+          }))
+        );
+      }
+
+      // Fetch Bookings
+      const bookingsRes = await fetch('/api/v1/bookings');
+      const bookingsJson = await bookingsRes.json();
+      if (bookingsJson.success && bookingsJson.data) {
+        setBookings(
+          bookingsJson.data.map((b: any) => ({
+            id: b.bookingNumber || b._id,
+            bookingNumber: b.bookingNumber,
+            venue: b.venue,
+            guest: b.guest,
+            phone: b.phone,
+            rate: b.rate,
+            advance: b.advance,
+            hours: b.hours,
+            start: b.start || b.createdAt,
+            status: b.status,
+            notes: b.notes,
+          }))
+        );
+      }
+    } catch (err: any) {
+      console.warn('Backend fetch error, continuing gracefully:', err);
+      setDbStatus('fallback');
+      setDbMessage('Backend Connecting');
+    } finally {
+      setIsLoaded(true);
+    }
+  }, []);
+
+  // Load initial data
+  useEffect(() => {
+    refreshAllData();
+  }, [refreshAllData]);
+
+  // Connect to SSE Real-time updates
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/v1/realtime');
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'KOT_CREATED') {
+            if (settings.soundAlerts) playOrderChime();
+            refreshAllData();
+          } else if (
+            data.type === 'ORDER_CREATED' ||
+            data.type === 'ORDER_UPDATED' ||
+            data.type === 'KOT_STATUS_CHANGED' ||
+            data.type === 'TABLE_STATUS_CHANGED' ||
+            data.type === 'TABLE_TRANSFERRED' ||
+            data.type === 'ITEM_VOIDED' ||
+            data.type === 'SHISHA_TIMER_UPDATED' ||
+            data.type === 'SHIFT_OPENED' ||
+            data.type === 'SHIFT_CLOSED' ||
+            data.type === 'BILL_SETTLED'
+          ) {
+            refreshAllData();
+          }
+        } catch {
+          // ignore non-json
+        }
+      };
+
+      eventSource.onerror = () => {
+        // EventSource will auto-reconnect
+      };
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [settings.soundAlerts, refreshAllData]);
+
+  // Order submission
+  const handleOrderSubmit = async (orderData: {
+    location: string;
+    guest: string;
+    phone: string;
+    staff: string;
+    bookingId: string | null;
+    items: CartItem[];
+    notes: string;
+    shishaAdvance: number;
+    duration: number;
+  }) => {
+    try {
+      const res = await fetch('/api/v1/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tableName: orderData.location,
+          guestName: orderData.guest,
+          guestPhone: orderData.phone,
+          staffName: orderData.staff,
+          bookingId: orderData.bookingId,
+          items: orderData.items,
+          notes: orderData.notes,
+          shishaAdvance: orderData.shishaAdvance,
+          duration: orderData.duration,
+          taxPercent: settings.taxPercent,
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        if (settings.soundAlerts) playOrderChime();
+        await refreshAllData();
+        setActiveTab('live');
+      } else {
+        alert(json.error || 'Failed to submit order');
+      }
+    } catch (err: any) {
+      alert('Network error: ' + err.message);
+    }
+  };
+
+  // KOT status change
+  const handleKOTStatusChange = async (kotId: string, newStatus: KOTStatus) => {
+    try {
+      const res = await fetch('/api/v1/kots', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kotId, status: newStatus }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        if (newStatus === 'READY' && settings.soundAlerts) {
+          playTimerAlert();
+        }
+        await refreshAllData();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Shisha timer extensions
+  const handleShishaAddDuration = async (kotId: string, additionalMinutes: number) => {
+    try {
+      await fetch('/api/v1/shisha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kotId, addMinutes: additionalMinutes }),
+      });
+      await refreshAllData();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleShishaMarkServed = async (kotId: string) => {
+    try {
+      await fetch('/api/v1/shisha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kotId, markServed: true }),
+      });
+      await refreshAllData();
+    } catch {
+      // ignore
+    }
+  };
+
+  // Private bookings
+  const handleCreateBooking = async (
+    bookingData: Omit<PrivateBooking, 'id' | 'start' | 'status'>
+  ) => {
+    try {
+      const res = await fetch('/api/v1/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookingData),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await refreshAllData();
+        setCurrentLocation(bookingData.venue);
+        setActiveTab('order');
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCloseBooking = async (bookingId: string) => {
+    try {
+      await fetch('/api/v1/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId, status: 'CLOSED' }),
+      });
+      await refreshAllData();
+    } catch {
+      // ignore
+    }
+  };
+
+  // Payment Recording & Bill Settlement
+  const handleRecordPayment = async (
+    orderId: string,
+    payment: {
+      amount: number;
+      method: 'Cash' | 'UPI' | 'Card' | 'Credit Account';
+      creditRef?: string;
+    },
+    options?: {
+      discount?: number;
+      discountReason?: string;
+      taxPercent?: number;
+      payments?: Array<{
+        amount: number;
+        method: 'Cash' | 'UPI' | 'Card' | 'Credit Account';
+        creditRef?: string;
+      }>;
+    }
+  ) => {
+    try {
+      const res = await fetch('/api/v1/billing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          payment,
+          payments: options?.payments,
+          discount: options?.discount,
+          discountReason: options?.discountReason,
+          taxPercent: options?.taxPercent,
+          closeOrder: true,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await refreshAllData();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Counters
+  const activeOrdersCount = useMemo(() => orders.filter((o) => !o.closed).length, [orders]);
+  const activeKotsCount = useMemo(() => kots.filter((k) => k.status !== 'SERVED').length, [kots]);
+  const activeShishaCount = useMemo(
+    () => kots.filter((k) => k.station === 'Shisha Master' && k.status !== 'SERVED').length,
+    [kots]
+  );
+  const activeBookingsCount = useMemo(
+    () => bookings.filter((b) => b.status === 'ACTIVE').length,
+    [bookings]
+  );
+
+  return (
+    <div className="min-h-screen bg-[#0a0c10] text-slate-100 flex flex-col selection:bg-[#9f1119] selection:text-white">
+      <header className="no-print bg-[#10131a] border-b border-neutral-800/80 px-4 py-3 sticky top-0 z-40 shadow-lg">
+        <div className="max-w-[1720px] mx-auto">
+          <TopBar
+            settings={settings}
+            onToggleSound={() => setSettings((s) => ({ ...s, soundAlerts: !s.soundAlerts }))}
+            dbStatus={dbStatus}
+            dbMessage={dbMessage}
+            currentTime={currentTime}
+            onRefresh={refreshAllData}
+            currentUser={currentUser}
+            onOpenAuth={() => setIsAuthModalOpen(true)}
+            onLock={handleLockTerminal}
+          />
+          <NavTabs
+            activeTab={activeTab as WebTabKey}
+            onTabChange={(tab) => setActiveTab(tab)}
+            activeOrdersCount={activeOrdersCount}
+            activeKotsCount={activeKotsCount}
+            activeShishaCount={activeShishaCount}
+            activeBookingsCount={activeBookingsCount}
+          />
+        </div>
+      </header>
+
+      {/* Main Content Body */}
+      <main className="max-w-[1720px] mx-auto w-full p-4 md:p-6 flex-1 flex flex-col">
+        {activeTab === 'order' && (
+          <POSOrderView
+            menu={menu}
+            tables={tables}
+            orders={orders}
+            bookings={bookings}
+            currentLocation={currentLocation}
+            onSelectLocation={(loc) => setCurrentLocation(loc)}
+            onSubmitOrder={handleOrderSubmit}
+            onGoToBooking={(venue) => {
+              setCurrentLocation(venue);
+              setActiveTab('booking');
+            }}
+            onGoToBilling={(orderId) => {
+              setSelectedBillingOrderId(orderId);
+              setActiveTab('billing');
+            }}
+            onRefresh={refreshAllData}
+          />
+        )}
+
+        {activeTab === 'kot' && (
+          <KOTQueueView
+            kots={kots}
+            onStatusChange={handleKOTStatusChange}
+            onPrintKot={(kot) =>
+              setPrintModal({ isOpen: true, type: 'kot', kot })
+            }
+          />
+        )}
+
+        {activeTab === 'shisha' && (
+          <ShishaTimerView
+            kots={kots}
+            orders={orders}
+            onAddDuration={handleShishaAddDuration}
+            onMarkServed={handleShishaMarkServed}
+          />
+        )}
+
+        {activeTab === 'live' && (
+          <LiveOrdersView
+            orders={orders}
+            bookings={bookings}
+            onOpenBilling={(orderId) => {
+              setSelectedBillingOrderId(orderId);
+              setActiveTab('billing');
+            }}
+            onAddMoreItems={(location) => {
+              setCurrentLocation(location);
+              setActiveTab('order');
+            }}
+          />
+        )}
+
+        {activeTab === 'booking' && (
+          <PrivateBookingsView
+            bookings={bookings}
+            onCreateBooking={handleCreateBooking}
+            onCloseBooking={handleCloseBooking}
+            onAttachOrder={(b) => {
+              setCurrentLocation(b.venue);
+              setActiveTab('order');
+            }}
+          />
+        )}
+
+        {activeTab === 'billing' && (
+          <BillingView
+            orders={orders}
+            bookings={bookings}
+            settings={settings}
+            selectedOrderId={selectedBillingOrderId}
+            onSelectOrderId={(id) => setSelectedBillingOrderId(id)}
+            onRecordPayment={handleRecordPayment}
+            onPrintReceipt={(order, booking) =>
+              setPrintModal({ isOpen: true, type: 'bill', order, booking })
+            }
+          />
+        )}
+
+        {activeTab === 'shifts' && (
+          <ShiftRegisterView />
+        )}
+
+        {activeTab === 'settings' && (
+          <SettingsView
+            settings={settings}
+            menu={menu}
+            onUpdateSettings={(newSettings) => setSettings(newSettings)}
+            onUpdateMenu={(newMenu) => setMenu(newMenu)}
+            onExportData={() => {
+              const dump = JSON.stringify({ orders, kots, bookings, menu, settings });
+              const blob = new Blob([dump], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `layali_backup_${new Date().toISOString().slice(0, 10)}.json`;
+              a.click();
+            }}
+            onImportData={(jsonStr) => {
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.menu) setMenu(parsed.menu);
+                if (parsed.settings) setSettings(parsed.settings);
+                alert('Data restored successfully.');
+              } catch {
+                alert('Invalid JSON file.');
+              }
+            }}
+            onResetData={() => refreshAllData()}
+          />
+        )}
+      </main>
+
+      {/* Interactive Modal for Thermal 80mm Printout */}
+      {printModal.isOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-xl overflow-hidden max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <ThermalReceipt
+              type={printModal.type}
+              kot={printModal.kot}
+              order={printModal.order}
+              booking={printModal.booking}
+              settings={settings}
+              onClose={() => setPrintModal({ isOpen: false, type: 'kot' })}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Hidden container exclusively formatted for window.print() */}
+      <div id="thermal-print-container" className="hidden print:block">
+        {printModal.isOpen && (
+          <ThermalReceipt
+            type={printModal.type}
+            kot={printModal.kot}
+            order={printModal.order}
+            booking={printModal.booking}
+            settings={settings}
+          />
+        )}
+      </div>
+
+      {/* Staff Authentication & Terminal Lock Modal */}
+      <StaffAuthModal
+        isOpen={isAuthModalOpen || !currentUser}
+        onClose={currentUser ? () => setIsAuthModalOpen(false) : undefined}
+        onLoginSuccess={handleLoginSuccess}
+      />
+    </div>
+  );
+}
