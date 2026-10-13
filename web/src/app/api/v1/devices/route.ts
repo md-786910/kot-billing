@@ -9,10 +9,11 @@ const PAIRING_CODE_MINUTES = 10;
 
 function parseDeviceInput(body: Record<string, unknown>): { name: string; type: DeviceType; station: DeviceStation | null } | string {
   const name = str(body.name, 40);
-  const type = str(body.type, 20) as DeviceType;
+  // This product pairs counter terminals only (no waiter phones or station displays)
+  const type = (str(body.type, 20) || 'TERMINAL') as DeviceType;
   const station = (str(body.station, 30) || null) as DeviceStation | null;
   if (!name) return 'Enter a device name';
-  if (!DEVICE_TYPES.includes(type)) return 'Choose a device type';
+  if (!DEVICE_TYPES.includes(type) || type !== 'TERMINAL') return 'Only counter terminals can be paired';
   if (type === 'DISPLAY' && (!station || !DEVICE_STATIONS.includes(station))) return 'Choose the station for this display';
   return { name, type, station: type === 'DISPLAY' ? station : null };
 }

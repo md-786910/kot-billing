@@ -91,3 +91,20 @@ export async function createStationKots(
 export function isDuplicateKey(error: unknown): boolean {
   return (error as { code?: number })?.code === 11000;
 }
+
+/** Indian financial year label (April–March), e.g. "2026-27" */
+export function financialYear(date = new Date()): string {
+  const y = date.getFullYear();
+  const start = date.getMonth() >= 3 ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+
+/** GST invoice serial: consecutive within the financial year, e.g. "2026-27/0012" */
+export async function nextInvoiceNumber(): Promise<string> {
+  const fy = financialYear();
+  const seq = await nextSequence(`invoice-${fy}`, async () => {
+    const last = await OrderModel.find({ invoiceNumber: new RegExp(`^${fy}/`) }).select('invoiceNumber').lean();
+    return maxSuffix(last.map((o) => o.invoiceNumber ?? ''), `${fy}/`);
+  });
+  return `${fy}/${String(seq).padStart(4, '0')}`;
+}

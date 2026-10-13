@@ -18,13 +18,13 @@ const SettingsSchema = new Schema<ISettings>(
   {
     loungeName: { type: String, default: 'LAYALI SHISHA LOUNGE' },
     tagline: { type: String, default: 'PREMIUM LOUNGE & CAFE' },
-    address: { type: String, default: 'Rooftop & 1st/2nd Floor, Main Boulevard' },
-    phone: { type: String, default: '+91 98765 43210' },
-    gstNumber: { type: String, default: '20AAAAA0000A1Z5' },
+    address: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    gstNumber: { type: String, default: '' },
     taxPercent: { type: Number, default: 5 },
     soundAlerts: { type: Boolean, default: true },
     shishaDefaultDuration: { type: Number, default: 45 },
-    upiId: { type: String, default: 'layali@upi' },
+    upiId: { type: String, default: '' },
   },
   { timestamps: true }
 );

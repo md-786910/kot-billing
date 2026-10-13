@@ -29,7 +29,7 @@ const ALL: Permission[] = [
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ADMIN: ALL,
   MANAGER: ALL.filter((p) => !['staff.manage', 'device.manage', 'settings.manage', 'menu.edit'].includes(p)),
-  CASHIER: ['data.read', 'order.create', 'table.move', 'bill.settle', 'booking.manage', 'shift.manage'],
+  CASHIER: ['data.read', 'order.create', 'table.move', 'bill.settle', 'booking.manage', 'shift.manage', 'shisha.manage'],
   CAPTAIN: ['data.read', 'order.create', 'table.move', 'kot.update', 'shisha.manage'],
   KITCHEN_CHEF: ['data.read', 'kot.update'],
   SHISHA_MASTER: ['data.read', 'kot.update', 'shisha.manage'],

@@ -4,6 +4,7 @@ import { Station } from './MenuItem';
 export type OrderStatus = 'OPEN' | 'SETTLED' | 'VOIDED' | 'MERGED';
 
 export interface IOrderItem {
+  invoiceNumber?: string;
   name: string;
   price: number;
   station: Station;
@@ -107,6 +108,8 @@ const TableTransferRecordSchema = new Schema<ITableTransferRecord>(
 const OrderSchema = new Schema<IOrder>(
   {
     orderNumber: { type: String, required: true, unique: true, index: true },
+    // GST invoice serial, assigned when the bill is settled, e.g. "2026-27/0012"
+    invoiceNumber: { type: String, unique: true, sparse: true },
     tableId: { type: String },
     tableName: { type: String, required: true, index: true },
     guestName: { type: String, default: '' },

@@ -118,6 +118,7 @@ export async function POST(req: NextRequest) {
         success: true,
         message: `Entire order #${order.orderNumber} voided and ${order.tableName} released to VACANT.`,
         data: order,
+        voidKot,
       });
     }
 
@@ -180,6 +181,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: `Voided ${qtyToVoid}x ${targetItem.name} successfully.`,
       data: order,
+      voidKot,
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

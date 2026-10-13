@@ -114,13 +114,13 @@ export async function seedDatabaseIfEmpty() {
     await SettingsModel.create({
       loungeName: 'LAYALI SHISHA LOUNGE',
       tagline: 'PREMIUM LOUNGE & CAFE',
-      address: 'Rooftop & 1st/2nd Floor, Main Boulevard',
-      phone: '+91 98765 43210',
-      gstNumber: '20AAAAA0000A1Z5',
+      address: '',
+      phone: '',
+      gstNumber: '',
       taxPercent: 5,
       soundAlerts: true,
       shishaDefaultDuration: 45,
-      upiId: 'layali@upi',
+      upiId: '',
     });
   }
 

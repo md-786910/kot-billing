@@ -9,6 +9,7 @@ import { TableModel } from '@/models/Table';
 import { ShiftRegisterModel } from '@/models/ShiftRegister';
 import { PrivateBookingModel } from '@/models/PrivateBooking';
 import { SettingsModel } from '@/models/Settings';
+import { nextInvoiceNumber } from '@/lib/orders';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
 // A retried settlement with the same idempotencyKey returns the first result instead of paying twice
@@ -107,6 +108,7 @@ async function settleBill(req: NextRequest, auth: AuthContext) {
     }
 
     if (closeOrder && fullyPaid) {
+      order.invoiceNumber = await nextInvoiceNumber();
       order.status = 'SETTLED';
       order.closed = true;
       order.closedAt = new Date();
