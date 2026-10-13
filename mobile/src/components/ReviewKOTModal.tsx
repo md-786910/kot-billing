@@ -1,19 +1,21 @@
-import React, { useState } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  Modal,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../constants/theme';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { COLORS, RADIUS, SPACE, TOUCH, TYPE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
-import { PrivacyCover } from './PrivacyCover';
+import {
+  AppText,
+  Banner,
+  Button,
+  Chip,
+  ChipRow,
+  Divider,
+  EmptyState,
+  SectionLabel,
+  Sheet,
+  SheetActions,
+  Stepper,
+  formatMoney,
+} from '../ui';
 
 interface ReviewKOTModalProps {
   visible: boolean;
@@ -21,296 +23,161 @@ interface ReviewKOTModalProps {
   onSuccess: () => void;
 }
 
-const QUICK_NOTES = [
-  '🌶️ Less Spicy',
-  '🍟 Extra Crispy',
-  '🧊 Cold Ice',
-  '🔥 Double Coal',
-  '💧 Mineral Base',
-  '🧄 No Onion/Garlic',
-  '🍃 Paan+Mint Mix',
-  '🍋 Extra Lemon',
-];
+const QUICK_NOTES = ['Less spicy', 'Extra crispy', 'No onion', 'Less ice', 'Serve first'];
+const SHISHA_DURATIONS = [30, 45, 60];
 
-export const ReviewKOTModal: React.FC<ReviewKOTModalProps> = ({
-  visible,
-  onClose,
-  onSuccess,
-}) => {
-  const {
-    selectedTable,
-    cart,
-    cartTotal,
-    hasShishaInCart,
-    punchKOT,
-    loading,
-    markActivity,
-  } = usePOS();
+type SendError = { tone: 'warning' | 'danger'; text: string };
 
-  const [guestName, setGuestName] = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
+export const ReviewKOTModal: React.FC<ReviewKOTModalProps> = ({ visible, onClose, onSuccess }) => {
+  const { selectedTable, cart, cartTotal, hasShishaInCart, punchKOT, loading, updateCartQty } = usePOS();
+
   const [notes, setNotes] = useState('');
   const [shishaDuration, setShishaDuration] = useState(45);
-  const [shishaAdvance, setShishaAdvance] = useState('0');
+  const [error, setError] = useState<SendError | null>(null);
+
+  // Each time the sheet opens, start without a stale error
+  useEffect(() => {
+    if (visible) setError(null);
+  }, [visible]);
 
   const handleSubmit = async () => {
+    setError(null);
     const res = await punchKOT({
-      guestName: guestName.trim(),
-      guestPhone: guestPhone.trim(),
+      guestName: '',
+      guestPhone: '',
       notes: notes.trim(),
-      shishaAdvance: Number(shishaAdvance || 0),
+      shishaAdvance: 0,
       duration: hasShishaInCart ? shishaDuration : undefined,
     });
 
     // A second tap while the first is sending is ignored
     if (res.busy) return;
     if (res.success) {
-      Alert.alert('Success', `KOT sent to kitchen for ${selectedTable}`);
       setNotes('');
-      setGuestName('');
-      setGuestPhone('');
       onSuccess();
     } else if (res.uncertain) {
       // Timed out or still processing: data was refreshed and the cart kept with the same key,
       // so sending again can't create a second KOT
-      Alert.alert('Not confirmed yet', res.error || 'Check Running Items before sending again.');
+      setError({ tone: 'warning', text: `Not confirmed yet. ${res.error || 'Check the Ordered tab before sending again.'}` });
     } else {
-      Alert.alert('Error', res.error || 'Failed to dispatch KOT');
+      setError({ tone: 'danger', text: res.error || "Couldn't send to the kitchen. Try again." });
     }
   };
 
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalOverlay} onTouchStart={markActivity}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Review KOT · {selectedTable}</Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
-              <Ionicons name="close" size={24} color={COLORS.textMuted} />
-            </TouchableOpacity>
-          </View>
+  const appendNote = (note: string) => setNotes((prev) => (prev.trim() ? `${prev.trim()}, ${note}` : note));
 
-          <ScrollView style={{ maxHeight: 220, marginVertical: 10 }}>
-            {cart.map((it) => (
-              <View key={it.id} style={styles.reviewItemRow}>
-                <Text style={styles.reviewItemQty}>{it.qty}x</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.reviewItemName}>{it.name}</Text>
-                  <Text style={styles.reviewItemStation}>{it.station}</Text>
-                </View>
-                <Text style={styles.reviewItemPrice}>₹{(it.price * it.qty).toFixed(2)}</Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 6, paddingVertical: 4 }}
-          >
-            {QUICK_NOTES.map((chip) => (
-              <TouchableOpacity
-                key={chip}
-                style={styles.chipBtn}
-                onPress={() => {
-                  setNotes((prev) => (prev.trim() ? `${prev}, ${chip}` : chip));
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.chipBtnText}>{chip}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <TextInput
-            style={styles.notesInput}
-            placeholder="Kitchen notes (e.g., Less spicy, Paan mix)..."
-            placeholderTextColor={COLORS.textMuted}
-            value={notes}
-            onChangeText={setNotes}
-          />
-
-          {hasShishaInCart && (
-            <View style={styles.shishaOptionsRow}>
-              <Text style={styles.shishaOptionsLabel}>Shisha Duration:</Text>
-              {[30, 45, 60].map((dur) => (
-                <TouchableOpacity
-                  key={dur}
-                  style={[styles.durBtn, shishaDuration === dur && styles.durBtnActive]}
-                  onPress={() => setShishaDuration(dur)}
-                >
-                  <Text
-                    style={[
-                      styles.durBtnText,
-                      shishaDuration === dur && styles.durBtnTextActive,
-                    ]}
-                  >
-                    {dur}m
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          <View style={styles.modalSummaryRow}>
-            <Text style={styles.modalTotalLabel}>Order Subtotal:</Text>
-            <Text style={styles.modalTotalVal}>₹{cartTotal.toFixed(2)}</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.dispatchKOTBtn}
-            onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.dispatchKOTBtnText}>PUNCH KOT TO KITCHEN</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-        <PrivacyCover />
+  const footer = (
+    <View style={styles.footer}>
+      {error ? <Banner tone={error.tone} text={error.text} /> : null}
+      <View style={styles.totalRow}>
+        <AppText variant="bodyStrong" tone="secondary">
+          Total
+        </AppText>
+        <AppText variant="title" tone="gold" money>
+          {formatMoney(cartTotal)}
+        </AppText>
       </View>
-    </Modal>
+      <SheetActions>
+        <Button
+          label="Send to kitchen"
+          icon="send"
+          size="lg"
+          onPress={handleSubmit}
+          loading={loading}
+          disabled={cart.length === 0}
+          style={styles.grow}
+          testID="send-kot"
+        />
+      </SheetActions>
+    </View>
+  );
+
+  return (
+    <Sheet visible={visible} title="Review order" subtitle={selectedTable} onClose={onClose} footer={footer} testID="review-sheet">
+      {cart.length === 0 ? (
+        <EmptyState icon="shopping-bag" title="Nothing to send" hint="Add items from the menu first." />
+      ) : (
+        <View>
+          {cart.map((it, idx) => (
+            <View key={it.id}>
+              {idx > 0 ? <Divider /> : null}
+              <View style={styles.line}>
+                <View style={styles.grow}>
+                  <AppText variant="bodyStrong" numberOfLines={2}>
+                    {it.name}
+                  </AppText>
+                  <AppText variant="caption" tone="muted" money>
+                    {formatMoney(it.price)} each
+                  </AppText>
+                </View>
+                <Stepper value={it.qty} itemName={it.name} onChange={(next) => updateCartQty(it.id, next - it.qty)} />
+                <AppText variant="bodyStrong" money style={styles.amount} numberOfLines={1}>
+                  {formatMoney(it.price * it.qty)}
+                </AppText>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {hasShishaInCart ? (
+        <View>
+          <SectionLabel>Shisha time</SectionLabel>
+          <ChipRow style={styles.bleed}>
+            {SHISHA_DURATIONS.map((dur) => (
+              <Chip
+                key={dur}
+                label={`${dur} min`}
+                selected={shishaDuration === dur}
+                onPress={() => setShishaDuration(dur)}
+                testID={`shisha-${dur}`}
+              />
+            ))}
+          </ChipRow>
+        </View>
+      ) : null}
+
+      <View>
+        <SectionLabel>Note for the kitchen</SectionLabel>
+        <ChipRow style={styles.bleed}>
+          {QUICK_NOTES.map((note) => (
+            <Chip key={note} label={note} onPress={() => appendNote(note)} testID={`note-${note}`} />
+          ))}
+        </ChipRow>
+        <TextInput
+          style={styles.notesInput}
+          placeholder="Note for the kitchen"
+          placeholderTextColor={COLORS.textMuted}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          accessibilityLabel="Note for the kitchen"
+          testID="kot-notes"
+        />
+      </View>
+    </Sheet>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  modalCard: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-    padding: 18,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderSubtle,
-    paddingBottom: 10,
-  },
-  modalTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  reviewItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderSubtle,
-  },
-  reviewItemQty: {
-    color: COLORS.gold,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  reviewItemName: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-  },
-  reviewItemStation: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-  },
-  reviewItemPrice: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  grow: { flex: 1 },
+  line: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md, paddingVertical: SPACE.sm },
+  amount: { minWidth: 64, textAlign: 'right' },
+  // ChipRow pads its content by SPACE.lg; offset that so chips line up with the rest of the sheet
+  bleed: { marginHorizontal: -SPACE.lg },
   notesInput: {
-    backgroundColor: COLORS.bgPrimary,
-    borderRadius: 8,
-    padding: 10,
-    color: '#ffffff',
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-    fontSize: 12,
-    marginTop: 8,
-  },
-  shishaOptionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 10,
-  },
-  shishaOptionsLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  durBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: COLORS.bgSurface,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-  },
-  durBtnActive: {
-    backgroundColor: COLORS.gold,
-  },
-  durBtnText: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  durBtnTextActive: {
-    color: '#000000',
-  },
-  modalSummaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderSubtle,
-    paddingTop: 10,
-  },
-  modalTotalLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  modalTotalVal: {
-    color: COLORS.gold,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  dispatchKOTBtn: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  dispatchKOTBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  chipBtn: {
-    backgroundColor: COLORS.bgSurface,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-  },
-  chipBtnText: {
+    ...TYPE.body,
+    minHeight: TOUCH.min,
+    marginTop: SPACE.sm,
+    paddingHorizontal: SPACE.md,
+    paddingVertical: SPACE.md,
     color: COLORS.textPrimary,
-    fontSize: 11,
-    fontWeight: '600',
+    backgroundColor: COLORS.bgInput,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.borderDefault,
+    textAlignVertical: 'top',
   },
+  footer: { gap: SPACE.md },
+  totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 });

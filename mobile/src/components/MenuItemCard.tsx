@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { MenuItem, CartItem } from '../types';
-import { COLORS } from '../constants/theme';
+import { COLORS, RADIUS, SPACE } from '../constants/theme';
+import { AppText, Badge, Button, Stepper, formatMoney } from '../ui';
 
 interface MenuItemCardProps {
   item: MenuItem;
@@ -14,6 +15,10 @@ interface MenuItemCardProps {
   readOnly?: boolean;
 }
 
+/**
+ * One compact menu row. Tapping the row adds one; the right side shows Add, a stepper once the
+ * item is in the cart, or an in/out of stock toggle while editing stock.
+ */
 export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   item,
   cartItem,
@@ -23,201 +28,73 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   onToggle86,
   readOnly,
 }) => {
-  const is86 = !item.isAvailable;
+  const outOfStock = !item.isAvailable;
+  const qty = cartItem?.qty ?? 0;
+  const canAdd = !is86ManagerMode && !readOnly && !outOfStock;
+  const price = formatMoney(item.price);
+
+  let control: React.ReactNode = null;
+  if (is86ManagerMode) {
+    control = (
+      <Button
+        label={outOfStock ? 'Out of stock' : 'In stock'}
+        icon={outOfStock ? 'slash' : 'check-circle'}
+        variant={outOfStock ? 'dangerGhost' : 'secondary'}
+        onPress={() => onToggle86?.(item)}
+        testID={`stock-${item.name}`}
+        accessibilityLabel={outOfStock ? `${item.name} is out of stock. Mark in stock` : `${item.name} is in stock. Mark out of stock`}
+      />
+    );
+  } else if (canAdd) {
+    control =
+      qty > 0 ? (
+        <Stepper value={qty} itemName={item.name} onChange={(next) => onUpdateQty(item.id, next - qty)} />
+      ) : (
+        <Button label="Add" icon="plus" variant="secondary" onPress={() => onAdd(item)} testID={`add-${item.name}`} accessibilityLabel={`Add ${item.name}`} />
+      );
+  }
 
   return (
-    <View style={[styles.menuItemCard, is86 && styles.menuItemCard86]}>
-      <View style={styles.menuItemInfo}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <Text style={[styles.menuItemName, is86 && styles.menuItemName86]}>{item.name}</Text>
-          {is86 && (
-            <View style={styles.badge86}>
-              <Text style={styles.badge86Text}>86 SOLD OUT</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.menuItemMeta}>
-          <Text style={styles.menuItemPrice}>₹{item.price}</Text>
-          <Text
-            style={[
-              styles.stationBadge,
-              item.station === 'Kitchen'
-                ? styles.badgeKitchen
-                : item.station === 'Beverage Counter'
-                ? styles.badgeBar
-                : styles.badgeShisha,
-            ]}
-          >
-            {item.station}
-          </Text>
-        </View>
+    <Pressable
+      onPress={canAdd ? () => onAdd(item) : undefined}
+      disabled={!canAdd}
+      accessibilityRole={canAdd ? 'button' : undefined}
+      accessibilityLabel={`${item.name}, ${price}${outOfStock ? ', out of stock' : ''}${qty > 0 ? `, ${qty} in cart` : ''}`}
+      accessibilityHint={canAdd ? 'Adds one to the order' : undefined}
+      style={({ pressed }) => [styles.row, qty > 0 && !is86ManagerMode && styles.rowInCart, pressed && styles.rowPressed]}
+    >
+      <View style={[styles.info, outOfStock && styles.dimmed]}>
+        <AppText variant="bodyStrong" numberOfLines={2}>
+          {item.name}
+        </AppText>
+        <AppText variant="caption" tone="secondary" money>
+          {price}
+        </AppText>
       </View>
-
-      {is86ManagerMode ? (
-        <TouchableOpacity
-          style={[
-            styles.addBtn,
-            is86
-              ? { backgroundColor: '#10b981', borderColor: '#059669' }
-              : { backgroundColor: '#ef4444', borderColor: '#dc2626' },
-          ]}
-          onPress={() => onToggle86?.(item)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.addBtnText}>{is86 ? 'RESTORE' : "86 OUT"}</Text>
-        </TouchableOpacity>
-      ) : readOnly ? null : is86 ? (
-        <View style={styles.btn86Disabled}>
-          <Text style={styles.btn86Text}>86'd</Text>
-        </View>
-      ) : cartItem ? (
-        <View style={styles.stepperRow}>
-          <TouchableOpacity
-            style={styles.stepperBtn}
-            onPress={() => onUpdateQty(item.id, -1)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.stepperBtnText}>-</Text>
-          </TouchableOpacity>
-          <Text style={styles.stepperQty}>{cartItem.qty}</Text>
-          <TouchableOpacity
-            style={styles.stepperBtn}
-            onPress={() => onUpdateQty(item.id, 1)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.stepperBtnText}>+</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => onAdd(item)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.addBtnText}>+ ADD</Text>
-        </TouchableOpacity>
-      )}
-    </View>
+      {outOfStock && !is86ManagerMode ? <Badge label="Out of stock" fg={COLORS.danger} bg={COLORS.dangerBg} /> : null}
+      {control ? (
+        // Swallow touches between the stepper buttons so they don't add another one via the row
+        <View onStartShouldSetResponder={() => true}>{control}</View>
+      ) : null}
+    </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
-  menuItemCard: {
+  row: {
+    minHeight: 64,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: SPACE.md,
+    paddingHorizontal: SPACE.lg,
+    paddingVertical: SPACE.sm,
     backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
   },
-  menuItemInfo: {
-    flex: 1,
-  },
-  menuItemName: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  menuItemMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  menuItemPrice: {
-    color: COLORS.gold,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  stationBadge: {
-    fontSize: 9,
-    fontWeight: '700',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  badgeKitchen: {
-    backgroundColor: COLORS.kitchenBg,
-    color: COLORS.kitchen,
-  },
-  badgeBar: {
-    backgroundColor: COLORS.barBg,
-    color: COLORS.bar,
-  },
-  badgeShisha: {
-    backgroundColor: COLORS.shishaBg,
-    color: COLORS.shisha,
-  },
-  addBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addBtnText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.bgPrimary,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-  },
-  stepperBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  stepperBtnText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  stepperQty: {
-    color: COLORS.gold,
-    fontSize: 14,
-    fontWeight: '800',
-    paddingHorizontal: 6,
-  },
-  menuItemCard86: {
-    opacity: 0.65,
-    backgroundColor: '#161314',
-    borderColor: 'rgba(239, 68, 68, 0.25)',
-  },
-  menuItemName86: {
-    textDecorationLine: 'line-through',
-    color: COLORS.textMuted,
-  },
-  badge86: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderColor: '#ef4444',
-    borderWidth: 1,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  badge86Text: {
-    color: '#f87171',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  btn86Disabled: {
-    backgroundColor: '#262626',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#404040',
-  },
-  btn86Text: {
-    color: '#888888',
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  rowInCart: { borderColor: COLORS.gold },
+  rowPressed: { backgroundColor: COLORS.bgSurface },
+  info: { flex: 1, gap: 2 },
+  dimmed: { opacity: 0.5 },
 });

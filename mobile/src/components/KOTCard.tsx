@@ -1,167 +1,123 @@
 import React from 'react';
-import { StyleSheet, View, Text } from 'react-native';
-import { KOT } from '../types';
-import { COLORS } from '../constants/theme';
+import { StyleSheet, View } from 'react-native';
+import { KOT, KOTStatus } from '../types';
+import { COLORS, SPACE, stationColors } from '../constants/theme';
+import { AppText, Badge, Button, Card, formatElapsed, minutesSince } from '../ui';
 
 interface KOTCardProps {
   kot: KOT;
+  /** Current time, ticked by the screen so the age badge stays fresh */
+  now: number;
+  /** Shown only for READY tickets when the signed-in user may update tickets */
+  onMarkServed?: (kot: KOT) => void;
+  /** This ticket's "Mark served" request is running */
+  serving?: boolean;
 }
 
-export const KOTCard: React.FC<KOTCardProps> = ({ kot }) => {
-  const isReady = kot.status === 'READY';
-  const isPrep = kot.status === 'PREPARING';
-  const isCancelled = kot.status === 'CANCELLED';
+const STATUS: Record<KOTStatus, { label: string; fg: string; bg: string }> = {
+  NEW: { label: 'New', fg: COLORS.info, bg: COLORS.infoBg },
+  PREPARING: { label: 'Preparing', fg: COLORS.warning, bg: COLORS.warningBg },
+  READY: { label: 'Ready', fg: COLORS.success, bg: COLORS.successBg },
+  SERVED: { label: 'Served', fg: COLORS.textSecondary, bg: COLORS.bgSurface },
+  CANCELLED: { label: 'Cancelled', fg: COLORS.danger, bg: COLORS.dangerBg },
+};
+
+/** Waiting time colour: under 10 min fine, 10–20 getting long, over 20 late */
+function ageColors(minutes: number): { fg: string; bg: string } {
+  if (minutes > 20) return { fg: COLORS.danger, bg: COLORS.dangerBg };
+  if (minutes >= 10) return { fg: COLORS.warning, bg: COLORS.warningBg };
+  return { fg: COLORS.success, bg: COLORS.successBg };
+}
+
+export const KOTCard: React.FC<KOTCardProps> = ({ kot, now, onMarkServed, serving }) => {
+  const status = STATUS[kot.status] ?? STATUS.NEW;
+  const station = stationColors(kot.station);
+  const done = kot.status === 'SERVED' || kot.status === 'CANCELLED';
+  const cancelled = kot.status === 'CANCELLED';
+  const age = done ? { fg: COLORS.textSecondary, bg: COLORS.bgSurface } : ageColors(minutesSince(kot.createdAt, now));
+  const elapsed = formatElapsed(kot.createdAt, now);
+  const number = kot.kotNumber ?? kot.id;
 
   return (
-    <View style={[styles.kotCard, isCancelled && styles.kotCardCancelled]}>
-      {isCancelled ? (
-        <View style={styles.cancelledBanner}>
-          <Text style={styles.cancelledBannerText}>⛔ VOID DOCKET: DO NOT PREPARE</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.kotCardHeader}>
-        <View>
-          <Text style={styles.kotNumber}>{kot.kotNumber || kot.id}</Text>
-          <Text style={styles.kotTable}>{kot.tableName}</Text>
-        </View>
-        <View
-          style={[
-            styles.kotStatusTag,
-            isCancelled
-              ? styles.statusCancelled
-              : isReady
-              ? styles.statusReady
-              : isPrep
-              ? styles.statusPrep
-              : styles.statusNew,
-          ]}
-        >
-          <Text style={styles.kotStatusText}>{kot.status}</Text>
-        </View>
+    <Card accent={cancelled ? COLORS.danger : kot.status === 'READY' ? COLORS.success : undefined} testID={`kot-${number}`}>
+      <View style={styles.row}>
+        <AppText variant="heading" numberOfLines={1} style={styles.flex}>
+          {kot.tableName}
+        </AppText>
+        {elapsed ? <Badge label={elapsed} fg={age.fg} bg={age.bg} /> : null}
       </View>
 
-      <Text style={styles.kotStation}>{kot.station}</Text>
+      <View style={[styles.row, styles.meta]}>
+        <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.shrink}>
+          {number}
+        </AppText>
+        <Badge label={station.short} fg={station.fg} bg={station.bg} />
+        <Badge label={status.label} fg={status.fg} bg={status.bg} />
+      </View>
 
-      <View style={styles.kotItemsList}>
+      {cancelled ? (
+        <AppText variant="caption" tone="danger" style={styles.notes}>
+          Cancelled. Do not prepare.
+        </AppText>
+      ) : null}
+
+      <View style={styles.items}>
         {kot.items.map((it, idx) => (
-          <View key={idx} style={styles.kotItemRow}>
-            <Text style={styles.kotItemQty}>{it.qty}x</Text>
-            <Text style={[styles.kotItemName, isCancelled && styles.kotItemNameCancelled]}>
-              {it.name}
-            </Text>
+          <View key={idx} style={styles.itemRow}>
+            <AppText variant="bodyStrong" tone={cancelled ? 'muted' : 'gold'} money style={styles.qty}>
+              {it.qty}×
+            </AppText>
+            <View style={styles.flex}>
+              <AppText variant="body" tone={cancelled ? 'muted' : 'primary'} style={cancelled && styles.struck}>
+                {it.name}
+              </AppText>
+              {it.notes ? (
+                <AppText variant="caption" tone="warning">
+                  {it.notes}
+                </AppText>
+              ) : null}
+            </View>
           </View>
         ))}
       </View>
 
       {kot.notes ? (
-        <Text style={styles.kotNotes}>Note: {kot.notes}</Text>
+        <AppText variant="caption" tone="warning" style={styles.notes}>
+          {kot.notes}
+        </AppText>
       ) : null}
-    </View>
+
+      {kot.status === 'READY' && onMarkServed ? (
+        <Button
+          label="Mark served"
+          variant="secondary"
+          icon="check"
+          onPress={() => onMarkServed(kot)}
+          loading={serving}
+          fullWidth
+          style={styles.action}
+          testID={`served-${number}`}
+        />
+      ) : null}
+    </Card>
   );
 };
 
 const styles = StyleSheet.create({
-  kotCard: {
-    backgroundColor: COLORS.bgCard,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-  },
-  kotCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  kotNumber: {
-    color: COLORS.gold,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  kotTable: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  kotStatusTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusNew: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  statusPrep: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-  },
-  statusReady: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-  },
-  kotStatusText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  kotStation: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginBottom: 8,
-  },
-  kotItemsList: {
+  row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  flex: { flex: 1 },
+  shrink: { flexShrink: 1 },
+  meta: { marginTop: SPACE.xs },
+  items: {
+    marginTop: SPACE.md,
+    paddingTop: SPACE.md,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderSubtle,
-    paddingTop: 8,
+    gap: SPACE.sm,
   },
-  kotItemRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 4,
-  },
-  kotItemQty: {
-    color: COLORS.gold,
-    fontSize: 13,
-    fontWeight: '700',
-    width: 24,
-  },
-  kotItemName: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-  },
-  kotNotes: {
-    color: COLORS.gold,
-    fontSize: 11,
-    fontStyle: 'italic',
-    marginTop: 6,
-  },
-  kotCardCancelled: {
-    borderColor: '#ef4444',
-    backgroundColor: '#1c1416',
-  },
-  cancelledBanner: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#ef4444',
-  },
-  cancelledBannerText: {
-    color: '#f87171',
-    fontSize: 11,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  statusCancelled: {
-    backgroundColor: 'rgba(239, 68, 68, 0.3)',
-    borderWidth: 1,
-    borderColor: '#ef4444',
-  },
-  kotItemNameCancelled: {
-    textDecorationLine: 'line-through',
-    color: '#f87171',
-  },
+  itemRow: { flexDirection: 'row', gap: SPACE.sm },
+  qty: { minWidth: 28 },
+  struck: { textDecorationLine: 'line-through' },
+  notes: { marginTop: SPACE.sm },
+  action: { marginTop: SPACE.md },
 });
