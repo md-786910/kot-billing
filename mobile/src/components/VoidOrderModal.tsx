@@ -12,6 +12,7 @@ import {
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { PrivacyCover } from './PrivacyCover';
 
 interface VoidOrderModalProps {
   visible: boolean;
@@ -57,6 +58,7 @@ export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
     setIsVoiding(true);
     const res = await voidOrder(orderId, tableName, selectedReason, needsManagerPin ? pin : undefined);
     setIsVoiding(false);
+    if (res.busy) return; // another action is still sending
     setPin('');
 
     if (res.success) {
@@ -152,6 +154,7 @@ export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
+        <PrivacyCover />
       </View>
     </Modal>
   );

@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { PrivacyCover } from './PrivacyCover';
 
 interface TableTransferModalProps {
   visible: boolean;
@@ -58,6 +59,7 @@ export const TableTransferModal: React.FC<TableTransferModalProps> = ({
     }
 
     const res = await transferTable(fromTable, target, reason.trim());
+    if (res.busy) return;
     if (res.success) {
       Alert.alert('Table Shifted', `Order transferred from ${fromTable} to ${target} successfully.`);
       if (onSuccess) onSuccess(target);
@@ -153,6 +155,7 @@ export const TableTransferModal: React.FC<TableTransferModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
+        <PrivacyCover />
       </View>
     </Modal>
   );

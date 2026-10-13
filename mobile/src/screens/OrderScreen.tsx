@@ -87,6 +87,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
   const handleToggle86Item = async (item: MenuItem) => {
     const nextAvailability = !item.isAvailable;
     const res = await toggle86(item.id, nextAvailability);
+    if (res.busy) return;
     if (res.success) {
       Alert.alert(
         nextAvailability ? 'Restored In Stock' : '86 OUT OF STOCK',

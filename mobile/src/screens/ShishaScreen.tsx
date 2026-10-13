@@ -11,7 +11,7 @@ export const ShishaScreen: React.FC = () => {
 
   const handleExtend = async (kotId: string) => {
     const res = await extendShisha(kotId);
-    if (!res.success) Alert.alert('Could not extend', res.error || 'Try again.');
+    if (!res.success && !res.busy) Alert.alert('Could not extend', res.error || 'Try again.');
   };
   const shishaPots = kots.filter((k) => k.station === 'Shisha Master' && k.status !== 'SERVED');
 

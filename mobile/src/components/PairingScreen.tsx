@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -13,6 +13,7 @@ import {
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { COLORS, SERVER_URL_PLACEHOLDER } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { useCooldown } from '../hooks/useCooldown';
 
 export const PairingScreen: React.FC = () => {
   const { pair, serverUrl, authNotice } = usePOS();
@@ -20,19 +21,26 @@ export const PairingScreen: React.FC = () => {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
+  // Set synchronously: the button and the keyboard's Done key could otherwise both submit the code
+  const pairingRef = useRef(false);
+  const cooldown = useCooldown();
 
-  const canPair = url.trim().length > 0 && code.length === 6 && !pairing;
+  const canPair = url.trim().length > 0 && code.length === 6 && !pairing && !cooldown.active;
 
   const handlePair = async () => {
-    if (!canPair) return;
+    if (!canPair || pairingRef.current) return;
+    pairingRef.current = true;
     setPairing(true);
     setError(null);
     const res = await pair(url, code);
     // On success the app moves on to the lock screen and this unmounts
     if (!res.success) {
+      pairingRef.current = false;
       setPairing(false);
       setError(res.error || 'Pairing failed');
       if (res.status === 401) setCode('');
+      // Retrying while rate limited only extends the server's wait
+      if (res.status === 429) cooldown.start();
     }
   };
 
@@ -102,6 +110,8 @@ export const PairingScreen: React.FC = () => {
           >
             {pairing ? (
               <ActivityIndicator size="small" color="#ffffff" />
+            ) : cooldown.active ? (
+              <Text style={styles.pairBtnText}>Try again in {cooldown.secondsLeft}s</Text>
             ) : (
               <Text style={styles.pairBtnText}>Pair device</Text>
             )}

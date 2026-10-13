@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -14,6 +14,8 @@ import { MaterialCommunityIcons, Ionicons, FontAwesome5, Feather } from '@expo/v
 import { COLORS } from '../constants/theme';
 import { Order } from '../types';
 import { usePOS } from '../context/POSContext';
+import { newIdempotencyKey } from '../services/api';
+import { PrivacyCover } from './PrivacyCover';
 
 interface MobileBillingModalProps {
   visible: boolean;
@@ -48,10 +50,41 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
   const [showReceiptPreview, setShowReceiptPreview] = useState<boolean>(false);
   const [isSettling, setIsSettling] = useState<boolean>(false);
   const [approvalPin, setApprovalPin] = useState<string>('');
+  // The server asked for a manager PIN although our (possibly stale) totals didn't need one
+  const [pinRequiredByServer, setPinRequiredByServer] = useState<boolean>(false);
 
   // Split amounts
   const [splitCash, setSplitCash] = useState<string>('0');
   const [splitOnline, setSplitOnline] = useState<string>('0');
+
+  // One key per settlement: reused for retries so a bill is never paid twice, replaced after success
+  const settleKeyRef = useRef<string | null>(null);
+  // Set synchronously so a double tap can't send two settlements
+  const settlingRef = useRef(false);
+
+  const resetEntry = useCallback(() => {
+    setPaymentMethod('Cash');
+    setCashTendered('');
+    setDiscountAmount('0');
+    setDiscountReason(DISCOUNT_REASONS[0]);
+    setShowReceiptPreview(false);
+    setApprovalPin('');
+    setPinRequiredByServer(false);
+    setSplitCash('0');
+    setSplitOnline('0');
+    settleKeyRef.current = null;
+  }, []);
+
+  // Nothing typed here (especially a manager's PIN) carries over to the next opening or another bill
+  const orderId = order?.id;
+  useEffect(() => {
+    resetEntry();
+  }, [visible, orderId, resetEntry]);
+
+  // The bill was closed elsewhere (or the table emptied): don't leave an invisible modal open
+  useEffect(() => {
+    if (visible && !order) onClose();
+  }, [visible, order, onClose]);
 
   // Active items (excluding voided)
   const activeItems = useMemo(() => {
@@ -65,7 +98,8 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
 
   const discountNum = Math.max(0, Number(discountAmount) || 0);
   const needsApproval =
-    discountNum > (itemsSubtotal * DISCOUNT_LIMIT_PERCENT) / 100 && !can('bill.discount.unlimited');
+    (discountNum > (itemsSubtotal * DISCOUNT_LIMIT_PERCENT) / 100 && !can('bill.discount.unlimited')) ||
+    pinRequiredByServer;
   const afterDiscount = Math.max(0, itemsSubtotal - discountNum);
   const taxAmount = Math.round((afterDiscount * 0.05) * 100) / 100; // 5% GST
   const cgstAmount = Math.round((taxAmount / 2) * 100) / 100; // 2.5% CGST
@@ -77,7 +111,7 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
   const changeToReturn = Math.max(0, cashGivenNum - grandTotal);
 
   const handleSettle = async () => {
-    if (!order) return;
+    if (!order || settlingRef.current) return;
     if (discountNum > itemsSubtotal) {
       Alert.alert('Discount too high', 'The discount cannot be more than the bill subtotal.');
       return;
@@ -96,6 +130,7 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
       discountReason: discountNum > 0 ? discountReason : undefined,
       taxPercent: 5,
       approvalPin: needsApproval ? approvalPin : undefined,
+      idempotencyKey: (settleKeyRef.current ??= newIdempotencyKey()),
     };
 
     if (paymentMethod === 'Split') {
@@ -116,18 +151,28 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
       };
     }
 
+    settlingRef.current = true;
     setIsSettling(true);
     const res = await settleBill(payload);
+    settlingRef.current = false;
     setIsSettling(false);
     setApprovalPin('');
 
+    if (res.busy) return;
     if (res.success) {
+      settleKeyRef.current = null;
       Alert.alert(
         'Bill Settled Successfully',
         `Table ${order.tableName} bill of ₹${grandTotal} settled via ${paymentMethod}. Table is now VACANT.`
       );
       onSettledSuccess();
       onClose();
+    } else if (res.uncertain) {
+      // Timed out or still processing: data was refreshed; the same key makes a retry safe
+      Alert.alert('Not confirmed yet', res.error || 'Check the table before trying again.');
+    } else if (res.status === 403 && /manager pin required/i.test(res.error ?? '')) {
+      setPinRequiredByServer(true);
+      Alert.alert('Manager PIN required', 'Ask a manager to enter their PIN below, then tap Settle again.');
     } else if (res.status === 409) {
       Alert.alert('Already settled', res.error || 'This bill is already settled.');
       onSettledSuccess();
@@ -252,7 +297,10 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
                   placeholder="0"
                   placeholderTextColor={COLORS.textMuted}
                   value={discountAmount}
-                  onChangeText={setDiscountAmount}
+                  onChangeText={(t) => {
+                    setDiscountAmount(t);
+                    setPinRequiredByServer(false);
+                  }}
                 />
                 <Text style={styles.rupeeTag}>₹</Text>
               </View>
@@ -287,7 +335,9 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
               {needsApproval && (
                 <View style={{ marginTop: 10 }}>
                   <Text style={styles.approvalHint}>
-                    Above {DISCOUNT_LIMIT_PERCENT}% of the bill. A manager must enter their PIN.
+                    {pinRequiredByServer
+                      ? 'The server needs a manager to approve this discount. A manager must enter their PIN.'
+                      : `Above ${DISCOUNT_LIMIT_PERCENT}% of the bill. A manager must enter their PIN.`}
                   </Text>
                   <TextInput
                     style={styles.cashInput}
@@ -454,6 +504,7 @@ export const MobileBillingModal: React.FC<MobileBillingModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
+        <PrivacyCover />
       </View>
     </Modal>
   );

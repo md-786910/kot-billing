@@ -20,6 +20,8 @@ import {
   mergeTableOrders,
   voidWholeOrder,
   toggleMenuItemAvailability,
+  newIdempotencyKey,
+  isStillProcessing,
   pairDevice,
   unpairDevice,
   signInWithPin,
@@ -45,6 +47,10 @@ export interface ActionResult {
   error?: string;
   /** HTTP status of the failure (0 = network/timeout) */
   status?: number;
+  /** Another action was still running, so this one was not sent (e.g. a double tap) */
+  busy?: boolean;
+  /** No clear answer (timeout, or the server is still processing it): data was refreshed, check before retrying */
+  uncertain?: boolean;
 }
 
 const IDLE_LOCK_MS = 2 * 60_000;
@@ -62,7 +68,17 @@ interface POSContextType {
   // Connectivity & Server
   isConnected: boolean;
   serverUrl: string;
-  changeServerUrl: (url: string) => Promise<ActionResult>;
+  /**
+   * Forget this phone's pairing and go to the pairing screen (optionally pre-filling a new address).
+   * A device token is never sent to a different server.
+   */
+  changeServer: (newUrl?: string) => Promise<void>;
+  /** The last auth check could not use the server (unreachable, wrong address, server error) */
+  serverUnreachable: boolean;
+  /** Called when a server call succeeds from the lock screen */
+  markServerReachable: () => void;
+  /** True while the app is not in the foreground (iOS app switcher): screens hide behind a plain cover */
+  privacyCover: boolean;
   loading: boolean;
   refreshData: () => Promise<void>;
   pingStats: PingStats | null;
@@ -128,6 +144,8 @@ interface POSContextType {
     discountReason?: string;
     taxPercent?: number;
     approvalPin?: string;
+    /** One key per settlement attempt; reuse it when retrying the same bill */
+    idempotencyKey: string;
   }) => Promise<ActionResult>;
   mergeTables: (sourceTable: string, targetTable: string) => Promise<ActionResult>;
   voidOrder: (orderId: string, table: string, voidReason: string, managerPin?: string) => Promise<ActionResult>;
@@ -140,17 +158,21 @@ function failure(err: unknown): ActionResult {
   return { success: false, error: errorMessage(err), status: errorStatus(err) };
 }
 
-async function persistSessionToken(token: string | null) {
-  setSessionToken(token);
-  await writeStored('sessionToken', token);
-}
-
+// Staff sessions are kept in memory only, so a restarted app always starts at the PIN lock
 async function persistDeviceToken(token: string | null) {
   setDeviceToken(token);
   await writeStored('deviceToken', token);
 }
 
 const NOT_PAIRED_NOTICE = "This phone isn't paired with the server. Enter a new pairing code.";
+const CHANGE_SERVER_NOTICE = 'Enter the server address and a new pairing code from Admin → Devices.';
+const BUSY_MESSAGE = 'Still working on the last action. Please wait.';
+
+type Notice = { text: string; /** connection/server trouble: cleared once the server answers again */ network: boolean };
+
+function isForeground(state: string | null | undefined) {
+  return state !== 'background' && state !== 'inactive';
+}
 
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -163,7 +185,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [device, setDevice] = useState<AuthDevice | null>(null);
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [serverUnreachable, setServerUnreachable] = useState(false);
+  const [appActive, setAppActive] = useState(() => isForeground(AppState.currentState));
 
   // Restaurant Data
   const [tables, setTables] = useState<TableItem[]>([]);
@@ -178,13 +202,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const authStatusRef = useRef<AuthStatus>('booting');
   authStatusRef.current = authStatus;
   const lastActivityRef = useRef(Date.now());
-  // Bumped on every lock so responses from a previous session are dropped
+  // Bumped on every lock/sign-in so responses from a previous session are dropped
   const sessionEpochRef = useRef(0);
+  // The running server action (one at a time); a new object per action so a lock can release it safely
+  const actionInFlightRef = useRef<object | null>(null);
 
   // ---------- Session helpers ----------
 
   const resetSessionState = useCallback(() => {
     sessionEpochRef.current += 1;
+    actionInFlightRef.current = null;
+    setLoading(false);
     setCurrentStaff(null);
     setPermissions([]);
     setCart([]);
@@ -201,62 +229,78 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     (reason?: string) => {
       const token = getSessionToken();
       resetSessionState();
-      void persistSessionToken(null);
+      setSessionToken(null);
       if (token) logoutSession(token).catch(() => {});
-      setAuthNotice(reason ?? null);
+      setNotice(reason ? { text: reason, network: false } : null);
       setAuthStatus((s) => (s === 'ready' ? 'locked' : s));
     },
     [resetSessionState]
   );
 
-  /** Ask the server who we are and route to pairing / lock / app */
+  /** Drop the device token (and any session) on this phone and show the pairing screen */
+  const forgetDevice = useCallback(
+    async (text: string | null) => {
+      resetSessionState();
+      setSessionToken(null);
+      setDeviceToken(null);
+      setDevice(null);
+      setServerUnreachable(false);
+      setNotice(text ? { text, network: false } : null);
+      setAuthStatus('unpaired');
+      await writeStored('deviceToken', null);
+    },
+    [resetSessionState]
+  );
+
+  const markServerReachable = useCallback(() => {
+    setServerUnreachable(false);
+    setIsConnected(true);
+    setNotice((n) => (n?.network ? null : n));
+  }, []);
+
+  /**
+   * Ask the server whether this phone is still paired and route to pairing or the PIN lock.
+   * Never unlocks: only a PIN sign-in opens the app.
+   */
   const checkAuth = useCallback(async () => {
     if (!getServerBaseUrl() || !getDeviceToken()) {
       setDevice(null);
       setAuthStatus('unpaired');
       return;
     }
+    // A reply that arrives after a sign-in, lock or re-pair started meanwhile is out of date
+    const epoch = sessionEpochRef.current;
+    const tokenSent = getSessionToken();
+    const deviceSent = getDeviceToken();
+    const isStale = () =>
+      epoch !== sessionEpochRef.current || tokenSent !== getSessionToken() || deviceSent !== getDeviceToken();
+
     try {
       const me = await fetchAuthMe();
-      setIsConnected(true);
+      if (isStale()) return;
+      markServerReachable();
       if (!me.device || me.device.type === 'DISPLAY') {
         // Revoked, or this token belongs to another server: start over with a new code
-        await persistSessionToken(null);
-        await persistDeviceToken(null);
-        resetSessionState();
-        setDevice(null);
-        setAuthNotice(NOT_PAIRED_NOTICE);
-        setAuthStatus('unpaired');
+        await forgetDevice(NOT_PAIRED_NOTICE);
         return;
       }
       setDevice(me.device);
-      if (me.user) {
-        setCurrentStaff(me.user);
-        setPermissions(me.permissions);
-        lastActivityRef.current = Date.now();
-        setAuthStatus('ready');
-      } else {
-        if (getSessionToken()) await persistSessionToken(null);
-        resetSessionState();
-        setAuthStatus('locked');
+      if (tokenSent && !me.user) {
+        lock('Your session ended. Sign in again.');
+        return;
       }
+      setAuthStatus((s) => (s === 'ready' ? s : 'locked'));
     } catch (err) {
-      // Never unlock without the server confirming the session; stay paired so we can retry
+      if (isStale()) return;
+      // Stay paired so we can retry; the lock screen offers to change the server address
       setIsConnected(false);
-      setAuthNotice(errorMessage(err));
-      if (authStatusRef.current !== 'ready') {
-        // Locked means no session on this phone: drop any leftover token and try to revoke it
-        const leftover = getSessionToken();
-        if (leftover) {
-          await persistSessionToken(null);
-          logoutSession(leftover).catch(() => {});
-        }
-        setAuthStatus('locked');
-      }
+      setServerUnreachable(true);
+      setNotice({ text: errorMessage(err), network: true });
+      setAuthStatus((s) => (s === 'ready' ? s : 'locked'));
     }
-  }, [resetSessionState]);
+  }, [forgetDevice, lock, markServerReachable]);
 
-  // Boot: load stored server/tokens, then ask the server
+  // Boot: load the stored server and device token, then ask the server. Always starts at the PIN lock.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -265,7 +309,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setServerBaseUrl(stored.serverUrl ?? '');
       setServerUrlState(getServerBaseUrl());
       setDeviceToken(stored.deviceToken);
-      setSessionToken(stored.sessionToken);
+      setSessionToken(null);
+      if (stored.legacySessionToken) {
+        // Older versions kept the staff session on disk: revoke it on the server and never resume it
+        logoutSession(stored.legacySessionToken).catch(() => {});
+        void writeStored('legacySessionToken', null);
+      }
       await checkAuth();
     })();
     return () => {
@@ -283,9 +332,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => setOnUnauthorized(null);
   }, [lock, checkAuth]);
 
-  // Auto-lock when the app goes to the background
+  // Cover the screen while inactive (iOS app switcher snapshot); lock when the app goes to the background
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
+      setAppActive(isForeground(state));
       if (state === 'background' && authStatusRef.current === 'ready') lock();
     });
     return () => sub.remove();
@@ -352,7 +402,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setServerUrlState(normalized);
     await writeStored('serverUrl', normalized);
     // A new pairing replaces any old tokens
-    await persistSessionToken(null);
+    setSessionToken(null);
     await persistDeviceToken(null);
 
     try {
@@ -368,7 +418,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       setDevice(result.device);
       setIsConnected(true);
-      setAuthNotice(null);
+      setServerUnreachable(false);
+      setNotice(null);
       setAuthStatus('locked');
       return { success: true };
     } catch (err) {
@@ -382,29 +433,34 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const res = await signInWithPin(userId, pin);
         token = res.sessionToken;
-        await persistSessionToken(token);
+        setSessionToken(token);
         const me = await fetchAuthMe();
+        // Locked, unpaired or re-paired while this was running
+        if (getSessionToken() !== token) throw new ApiError(0, 'Sign in was interrupted. Try again.');
         if (!me.user) throw new ApiError(401, 'Sign in failed. Try again.');
         sessionEpochRef.current += 1;
         setDevice(me.device);
         setCurrentStaff(me.user);
         setPermissions(me.permissions);
-        setAuthNotice(null);
+        setNotice(null);
+        setServerUnreachable(false);
         setIsConnected(true);
         lastActivityRef.current = Date.now();
         setAuthStatus('ready');
+        // Finished while the app was already in the background: don't leave it unlocked
+        if (AppState.currentState === 'background') lock();
         return { success: true };
       } catch (err) {
         if (token) {
           // PIN was accepted but we couldn't finish: don't leave a live session behind
-          await persistSessionToken(null);
+          if (getSessionToken() === token) setSessionToken(null);
           logoutSession(token).catch(() => {});
         }
         if (errorStatus(err) === 401 && /paired/i.test(errorMessage(err))) void checkAuth();
         return failure(err);
       }
     },
-    [checkAuth]
+    [checkAuth, lock]
   );
 
   const unpair = useCallback(async (): Promise<ActionResult> => {
@@ -415,12 +471,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       serverError = errorMessage(err);
     }
     // Forget the tokens on this phone either way
-    resetSessionState();
-    await persistSessionToken(null);
-    await persistDeviceToken(null);
-    setDevice(null);
-    setAuthNotice(null);
-    setAuthStatus('unpaired');
+    await forgetDevice(null);
     if (serverError) {
       return {
         success: false,
@@ -428,7 +479,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
     return { success: true };
-  }, [resetSessionState]);
+  }, [forgetDevice]);
 
   const changePin = useCallback(async (currentPin: string, newPin: string): Promise<ActionResult> => {
     try {
@@ -439,19 +490,23 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const changeServerUrl = useCallback(
-    async (url: string): Promise<ActionResult> => {
-      const normalized = normalizeServerUrl(url);
-      if (!normalized) return { success: false, error: 'Enter the server address' };
-      if (normalized === getServerBaseUrl()) return { success: true };
-      lock(); // signs out on the old server before switching
-      setServerBaseUrl(normalized);
-      setServerUrlState(normalized);
-      await writeStored('serverUrl', normalized);
-      await checkAuth();
-      return { success: true };
+  const changeServer = useCallback(
+    async (newUrl?: string) => {
+      // Last calls to the old server (they read its address and tokens before anything below runs):
+      // end the staff session and revoke this device there. Best effort: it may be unreachable.
+      const token = getSessionToken();
+      if (token) logoutSession(token).catch(() => {});
+      if (getDeviceToken()) unpairDevice(5_000).catch(() => {});
+
+      const next = newUrl ? normalizeServerUrl(newUrl) : '';
+      if (next) {
+        setServerBaseUrl(next);
+        setServerUrlState(next);
+      }
+      await forgetDevice(CHANGE_SERVER_NOTICE);
+      if (next) await writeStored('serverUrl', next);
     },
-    [lock, checkAuth]
+    [forgetDevice]
   );
 
   const can = useCallback((permission: Permission) => permissions.includes(permission), [permissions]);
@@ -502,18 +557,52 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ---------- Actions ----------
 
-  /** Runs a server action, refreshes data on success, and returns a consistent result */
-  const runAction = async (action: () => Promise<unknown>, onSuccess?: () => void): Promise<ActionResult> => {
+  // One idempotency key per cart submission: reused for retries, replaced when the cart or table changes
+  const kotKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    kotKeyRef.current = null;
+  }, [cart, selectedTable]);
+
+  /**
+   * Runs one server action at a time (a second tap is ignored), refreshes data afterwards, and
+   * returns a consistent result. `onSuccess` only runs if the same staff session is still signed in.
+   */
+  const runAction = async (
+    action: () => Promise<unknown>,
+    onSuccess?: () => void,
+    options: { idempotent?: boolean } = {}
+  ): Promise<ActionResult> => {
+    if (actionInFlightRef.current) return { success: false, busy: true, error: BUSY_MESSAGE };
+    const inFlight = {};
+    actionInFlightRef.current = inFlight;
+    const epoch = sessionEpochRef.current;
     setLoading(true);
     try {
       await action();
-      onSuccess?.();
+      if (epoch === sessionEpochRef.current) onSuccess?.();
       await refreshData();
       return { success: true };
     } catch (err) {
-      return failure(err);
+      const result = failure(err);
+      const stillProcessing = isStillProcessing(result.status, result.error);
+      if (result.status === 0 || stillProcessing) {
+        // The server may have applied it: show the latest data before a retry is possible
+        await refreshData();
+        const retryNote = options.idempotent ? " Trying again won't apply it twice." : '';
+        return {
+          ...result,
+          uncertain: true,
+          error: stillProcessing
+            ? `The server is still working on this. The screen has been refreshed — check it before trying again.${retryNote}`
+            : `No reply from the server, so this may or may not have gone through. The screen has been refreshed — check it before trying again.${retryNote}`,
+        };
+      }
+      return result;
     } finally {
-      setLoading(false);
+      if (actionInFlightRef.current === inFlight) {
+        actionInFlightRef.current = null;
+        setLoading(false);
+      }
     }
   };
 
@@ -523,10 +612,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notes?: string;
     shishaAdvance?: number;
     duration?: number;
-  }) =>
-    runAction(
+  }) => {
+    if (cart.length === 0) return Promise.resolve<ActionResult>({ success: false, error: 'The cart is empty.' });
+    const idempotencyKey = (kotKeyRef.current ??= newIdempotencyKey());
+    return runAction(
       () =>
         submitMobileOrder({
+          idempotencyKey,
           tableName: selectedTable,
           guestName: params.guestName,
           guestPhone: params.guestPhone,
@@ -542,8 +634,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           shishaAdvance: params.shishaAdvance,
           duration: hasShishaInCart ? params.duration : undefined,
         }),
-      clearCart
+      () => {
+        kotKeyRef.current = null;
+        clearCart();
+      },
+      { idempotent: true }
     );
+  };
 
   const transferTable = async (fromTable: string, toTable: string, reason?: string) => {
     if (!activeOrder) return { success: false, error: 'No active order found for table' };
@@ -569,9 +666,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     discountReason?: string;
     taxPercent?: number;
     approvalPin?: string;
+    idempotencyKey: string;
   }) =>
-    runAction(() =>
-      settleOrderBill({ ...params, approvalPin: params.approvalPin || undefined, closeOrder: true })
+    runAction(
+      () => settleOrderBill({ ...params, approvalPin: params.approvalPin || undefined, closeOrder: true }),
+      undefined,
+      { idempotent: true }
     );
 
   const mergeTables = (sourceTable: string, targetTable: string) =>
@@ -594,7 +694,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         isConnected,
         serverUrl,
-        changeServerUrl,
+        changeServer,
+        serverUnreachable,
+        markServerReachable,
+        privacyCover: !appActive,
         loading,
         refreshData,
         pingStats,
@@ -604,7 +707,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentStaff,
         permissions,
         can,
-        authNotice,
+        authNotice: notice?.text ?? null,
         checkAuth,
         pair,
         signIn,

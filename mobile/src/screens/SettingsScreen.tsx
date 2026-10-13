@@ -13,7 +13,7 @@ export const SettingsScreen: React.FC = () => {
     currentStaff,
     device,
     serverUrl,
-    changeServerUrl,
+    changeServer,
     isConnected,
     pingStats,
     runPingTest,
@@ -86,11 +86,11 @@ export const SettingsScreen: React.FC = () => {
       return;
     }
     Alert.alert(
-      'Change server?',
-      "You'll be signed out. If this phone isn't paired with that server, you'll need a new pairing code.",
+      'Change server address?',
+      'This phone will be unpaired and signed out. You will need a new pairing code from Admin → Devices.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Change', style: 'destructive', onPress: () => void changeServerUrl(next) },
+        { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer(next) },
       ]
     );
   };
@@ -263,9 +263,10 @@ export const SettingsScreen: React.FC = () => {
             onPress={handleSaveServer}
             disabled={!urlChanged}
           >
-            <Text style={styles.secondaryBtnText}>Save</Text>
+            <Text style={styles.secondaryBtnText}>Change server</Text>
           </TouchableOpacity>
         </View>
+        <Text style={styles.hint}>Changing the address unpairs this phone; pair it again with a new code.</Text>
       </View>
 
       {/* This device */}

@@ -329,7 +329,7 @@ export function voidWholeOrder(params: { orderId: string; table: string; voidRea
 }
 
 export function updateKOTStatus(kotId: string, status: string) {
-  return request('/api/v1/kots', { method: 'PATCH', body: { id: kotId, status } });
+  return request('/api/v1/kots', { method: 'PATCH', body: { kotId, status } });
 }
 
 export interface PaymentLine {

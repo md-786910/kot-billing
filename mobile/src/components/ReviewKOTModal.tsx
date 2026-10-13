@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { PrivacyCover } from './PrivacyCover';
 
 interface ReviewKOTModalProps {
   visible: boolean;
@@ -61,12 +62,18 @@ export const ReviewKOTModal: React.FC<ReviewKOTModalProps> = ({
       duration: hasShishaInCart ? shishaDuration : undefined,
     });
 
+    // A second tap while the first is sending is ignored
+    if (res.busy) return;
     if (res.success) {
       Alert.alert('Success', `KOT sent to kitchen for ${selectedTable}`);
       setNotes('');
       setGuestName('');
       setGuestPhone('');
       onSuccess();
+    } else if (res.uncertain) {
+      // Timed out or still processing: data was refreshed and the cart kept with the same key,
+      // so sending again can't create a second KOT
+      Alert.alert('Not confirmed yet', res.error || 'Check Running Items before sending again.');
     } else {
       Alert.alert('Error', res.error || 'Failed to dispatch KOT');
     }
@@ -163,6 +170,7 @@ export const ReviewKOTModal: React.FC<ReviewKOTModalProps> = ({
             )}
           </TouchableOpacity>
         </View>
+        <PrivacyCover />
       </View>
     </Modal>
   );

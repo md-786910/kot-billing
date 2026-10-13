@@ -5,6 +5,7 @@ import { Header } from './src/components/Header';
 import { BottomNav, TabKey } from './src/components/BottomNav';
 import { PairingScreen } from './src/components/PairingScreen';
 import { TerminalLockScreen } from './src/components/TerminalLockScreen';
+import { PrivacyCover } from './src/components/PrivacyCover';
 import { TablesScreen } from './src/screens/TablesScreen';
 import { OrderScreen } from './src/screens/OrderScreen';
 import { KOTsScreen } from './src/screens/KOTsScreen';
@@ -60,6 +61,8 @@ function Root() {
         ) : (
           <MainApp />
         )}
+        {/* Hides orders and bills from the iOS app switcher; the app locks once it is in the background */}
+        <PrivacyCover />
       </View>
     </SafeAreaView>
   );

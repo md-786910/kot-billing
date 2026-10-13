@@ -11,6 +11,7 @@ import {
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { PrivacyCover } from './PrivacyCover';
 
 interface TableMergeModalProps {
   visible: boolean;
@@ -57,6 +58,7 @@ export const TableMergeModal: React.FC<TableMergeModalProps> = ({
     setIsMerging(true);
     const res = await mergeTables(selectedTable, targetTable);
     setIsMerging(false);
+    if (res.busy) return;
 
     if (res.success) {
       Alert.alert(
@@ -156,6 +158,7 @@ export const TableMergeModal: React.FC<TableMergeModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
+        <PrivacyCover />
       </View>
     </Modal>
   );

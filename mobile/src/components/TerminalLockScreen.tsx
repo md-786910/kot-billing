@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { COLORS, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { errorMessage, errorStatus, fetchSignInStaff } from '../services/api';
 import { StaffUser } from '../types';
+import { useCooldown } from '../hooks/useCooldown';
 
 const MIN_PIN = 4;
 const MAX_PIN = 6;
@@ -15,30 +16,41 @@ const KEY_ROWS = [
 ];
 
 export const TerminalLockScreen: React.FC = () => {
-  const { signIn, checkAuth, device, authNotice } = usePOS();
+  const { signIn, checkAuth, device, authNotice, serverUnreachable, markServerReachable, changeServer } = usePOS();
 
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
-  const [staffError, setStaffError] = useState<string | null>(null);
+  const [staffError, setStaffError] = useState<{ message: string; status: number } | null>(null);
+  // Only the latest staff request may update the screen
+  const staffRequestRef = useRef(0);
 
   const [selected, setSelected] = useState<StaffUser | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Set synchronously so a double tap can't send the PIN twice
+  const submittingRef = useRef(false);
+  const cooldown = useCooldown();
 
   const loadStaff = useCallback(async () => {
+    const requestId = ++staffRequestRef.current;
     setStaffLoading(true);
     setStaffError(null);
     try {
-      setStaff(await fetchSignInStaff());
+      const list = await fetchSignInStaff();
+      if (requestId !== staffRequestRef.current) return;
+      setStaff(list);
+      markServerReachable();
     } catch (err) {
-      setStaffError(errorMessage(err, 'Could not load staff'));
+      if (requestId !== staffRequestRef.current) return;
+      const status = errorStatus(err);
+      setStaffError({ message: errorMessage(err, 'Could not load staff'), status });
       // Device token rejected: let the app decide whether to show pairing
-      if (errorStatus(err) === 401) void checkAuth();
+      if (status === 401) void checkAuth();
     } finally {
-      setStaffLoading(false);
+      if (requestId === staffRequestRef.current) setStaffLoading(false);
     }
-  }, [checkAuth]);
+  }, [checkAuth, markServerReachable]);
 
   useEffect(() => {
     loadStaff();
@@ -48,6 +60,21 @@ export const TerminalLockScreen: React.FC = () => {
   const retry = () => {
     if (!device) void checkAuth();
     loadStaff();
+  };
+
+  // Server unreachable, wrong address or failing: offer a way out (re-pair with a new address)
+  const canChangeServer =
+    serverUnreachable || (!!staffError && staffError.status !== 401 && staffError.status !== 429);
+
+  const confirmChangeServer = () => {
+    Alert.alert(
+      'Change server address?',
+      'This phone will be unpaired. You will need a new pairing code from Admin → Devices.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer() },
+      ]
+    );
   };
 
   // Functional updates so quick taps never drop digits
@@ -77,19 +104,22 @@ export const TerminalLockScreen: React.FC = () => {
   };
 
   const submit = async () => {
-    if (!selected || pin.length < MIN_PIN || submitting) return;
+    if (!selected || pin.length < MIN_PIN || submittingRef.current || cooldown.active) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     const res = await signIn(selected.id, pin);
     // On success this screen unmounts
     if (!res.success) {
+      submittingRef.current = false;
       setSubmitting(false);
       setPin('');
       setError(res.error || 'Incorrect PIN');
+      if (res.status === 429) cooldown.start();
     }
   };
 
-  const canSubmit = !!selected && pin.length >= MIN_PIN && !submitting;
+  const canSubmit = !!selected && pin.length >= MIN_PIN && !submitting && !cooldown.active;
   const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
@@ -111,11 +141,21 @@ export const TerminalLockScreen: React.FC = () => {
               <ActivityIndicator style={{ marginTop: 32 }} color={COLORS.gold} />
             ) : staffError ? (
               <View style={styles.errorBox}>
-                <Text style={styles.errorBoxText}>{staffError}</Text>
-                <TouchableOpacity style={styles.secondaryBtn} onPress={retry}>
+                <Text style={styles.errorBoxText}>{staffError.message}</Text>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={retry} accessibilityRole="button">
                   <Feather name="refresh-cw" size={16} color={COLORS.textPrimary} />
                   <Text style={styles.secondaryBtnText}>Retry</Text>
                 </TouchableOpacity>
+                {canChangeServer ? (
+                  <TouchableOpacity
+                    style={styles.secondaryBtn}
+                    onPress={confirmChangeServer}
+                    accessibilityRole="button"
+                  >
+                    <Feather name="server" size={16} color={COLORS.textPrimary} />
+                    <Text style={styles.secondaryBtnText}>Change server address</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : staff.length === 0 ? (
               <View style={styles.errorBox}>
@@ -234,6 +274,8 @@ export const TerminalLockScreen: React.FC = () => {
             >
               {submitting ? (
                 <ActivityIndicator size="small" color="#ffffff" />
+              ) : cooldown.active ? (
+                <Text style={styles.unlockText}>Try again in {cooldown.secondsLeft}s</Text>
               ) : (
                 <>
                   <Feather name="unlock" size={18} color="#ffffff" />

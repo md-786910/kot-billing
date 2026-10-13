@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { PrivacyCover } from './PrivacyCover';
 
 interface ItemVoidModalProps {
   visible: boolean;
@@ -64,6 +65,7 @@ export const ItemVoidModal: React.FC<ItemVoidModalProps> = ({
     }
 
     const res = await voidItem(orderId, itemIndex, selectedReason, needsManagerPin ? pin : undefined);
+    if (res.busy) return; // a second tap while the first is sending
     setPin('');
     if (res.success) {
       Alert.alert('Item Voided', `${itemQty}x ${itemName} voided. Kitchen void ticket dispatched.`);
@@ -156,6 +158,7 @@ export const ItemVoidModal: React.FC<ItemVoidModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
+        <PrivacyCover />
       </View>
     </Modal>
   );
