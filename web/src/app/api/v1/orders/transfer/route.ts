@@ -26,8 +26,11 @@ export async function POST(req: NextRequest) {
       : await OrderModel.findOne({ orderNumber: orderId });
     if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
     if (order.closed) return NextResponse.json({ success: false, error: 'This bill is already closed' }, { status: 409 });
-    // The order's own table is the source; a client-sent "fromTable" is never trusted
+    // The order's own table is the source; a different client-sent "fromTable" means a stale screen
     const fromTable = order.tableName;
+    if (body.fromTable !== undefined && str(body.fromTable, 60) !== fromTable) {
+      return NextResponse.json({ success: false, error: `This order is now on ${fromTable}. Refresh and try again.` }, { status: 409 });
+    }
     if (fromTable === toTable) {
       return NextResponse.json({ success: false, error: 'Source and target tables cannot be the same' }, { status: 400 });
     }

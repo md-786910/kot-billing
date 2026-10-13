@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import mongoose from 'mongoose';
 import { UserModel } from '@/models/User';
 import { hashSecret } from '@/lib/auth/crypto';
+import { seedDatabaseIfEmpty } from '@/lib/seed';
 import { audit, createSession, isSetupRequired, jsonError, PIN_PATTERN, respondWithSession, str, serverError } from '@/lib/auth';
 
 // First run only: create the owner account
@@ -39,6 +40,9 @@ export async function POST(req: NextRequest) {
       await releaseSetupLock();
       throw error;
     }
+
+    // Tables, menu and settings exist from the first minute, whichever device is used first
+    await seedDatabaseIfEmpty();
 
     const user = { id: String(owner._id), name: owner.name, role: owner.role };
     await audit({ user, device: null, sessionId: null, permissions: [], actorName: user.name }, 'auth.setup', user.id);
