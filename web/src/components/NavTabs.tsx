@@ -35,7 +35,7 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: 'order', label: 'Punch Order', icon: Layers, iconClass: 'text-amber-300', permission: 'order.create' },
-  { key: 'kot', label: 'KOT Queue / KDS', icon: ChefHat, iconClass: 'text-emerald-400', permission: 'kot.update', badgeClass: 'bg-emerald-500 text-black' },
+  { key: 'kot', label: 'KOT log', icon: ChefHat, iconClass: 'text-emerald-400', permission: 'order.create' },
   { key: 'shisha', label: 'Shisha Pot Timers', icon: Flame, iconClass: 'text-amber-400', permission: 'shisha.manage', badgeClass: 'bg-amber-500 text-black' },
   { key: 'live', label: 'Live Tables', icon: Receipt, iconClass: 'text-sky-400', permission: 'order.create', badgeClass: 'bg-sky-500 text-black' },
   { key: 'booking', label: 'Private VIP & Cabins', icon: Shield, iconClass: 'text-purple-400', permission: 'booking.manage', badgeClass: 'bg-purple-500 text-white' },

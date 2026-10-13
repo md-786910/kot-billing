@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { usePrinter } from '@/components/print/PrintProvider';
 import { ShiftRegister } from '@/types/pos';
 import { formatINR, formatDateTime } from '@/utils/format';
 import {
@@ -22,13 +23,13 @@ import {
 } from 'lucide-react';
 
 export const ShiftRegisterView: React.FC = () => {
+  const printer = usePrinter();
   const [currentShift, setCurrentShift] = useState<ShiftRegister | null>(null);
   const [pastShifts, setPastShifts] = useState<ShiftRegister[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Open shift form
   const [openFloat, setOpenFloat] = useState<string>('2000');
-  const [openedBy, setOpenedBy] = useState<string>('Cashier 1');
   const [openNotes, setOpenNotes] = useState<string>('Morning opening register');
 
   // Cash drop form
@@ -39,7 +40,6 @@ export const ShiftRegisterView: React.FC = () => {
   // Close shift modal
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [actualCash, setActualCash] = useState<string>('');
-  const [closedBy, setClosedBy] = useState<string>('Manager');
   const [closeNotes, setCloseNotes] = useState<string>('');
 
   // Printable Z-Report state
@@ -74,7 +74,6 @@ export const ShiftRegisterView: React.FC = () => {
         body: JSON.stringify({
           action: 'open',
           openingFloat: Number(openFloat || 0),
-          openedBy,
           notes: openNotes,
         }),
       });
@@ -103,7 +102,6 @@ export const ShiftRegisterView: React.FC = () => {
           action: 'drop',
           amount: Number(dropAmount),
           reason: dropReason.trim(),
-          staff: openedBy,
         }),
       });
       const json = await res.json();
@@ -133,7 +131,6 @@ export const ShiftRegisterView: React.FC = () => {
         body: JSON.stringify({
           action: 'close',
           closingCashActual: Number(actualCash),
-          closedBy,
           notes: closeNotes,
         }),
       });
@@ -141,6 +138,8 @@ export const ShiftRegisterView: React.FC = () => {
       if (json.success) {
         setShowCloseModal(false);
         setZReportData(json.data);
+        // Z-report prints for the cash drawer as soon as the shift is closed
+        printer.printZReport(json.data);
         setActualCash('');
         fetchShiftData();
       } else {
@@ -219,16 +218,7 @@ export const ShiftRegisterView: React.FC = () => {
               </span>
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-neutral-300 block mb-1.5">Cashier Name:</label>
-              <input
-                type="text"
-                required
-                value={openedBy}
-                onChange={(e) => setOpenedBy(e.target.value)}
-                className="w-full bg-[#0a0c10] border border-neutral-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#d4af37]"
-              />
-            </div>
+            
 
             <div>
               <label className="text-xs font-bold text-neutral-300 block mb-1.5">Shift Notes / Float Breakdown:</label>
@@ -533,16 +523,7 @@ export const ShiftRegisterView: React.FC = () => {
                 </div>
               )}
 
-              <div>
-                <label className="text-xs font-bold text-neutral-300 block mb-1">Authorized Closing Manager:</label>
-                <input
-                  type="text"
-                  required
-                  value={closedBy}
-                  onChange={(e) => setClosedBy(e.target.value)}
-                  className="w-full bg-[#0a0c10] border border-neutral-700 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#d4af37]"
-                />
-              </div>
+              
 
               <div>
                 <label className="text-xs font-bold text-neutral-300 block mb-1">Closing Notes:</label>
@@ -667,7 +648,7 @@ export const ShiftRegisterView: React.FC = () => {
 
             <div className="flex gap-2 pt-2 no-print">
               <button
-                onClick={() => window.print()}
+                onClick={() => zReportData && printer.printZReport(zReportData)}
                 className="flex-1 py-2 bg-black text-white text-xs font-bold rounded cursor-pointer"
               >
                 Print Z-Report

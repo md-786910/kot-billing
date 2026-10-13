@@ -10,16 +10,17 @@ import {
   AppSettings,
   KOTStatus,
   CartItem,
+  BillBooking,
 } from '@/types/pos';
 import { POSOrderView } from '@/components/POSOrderView';
-import { KOTQueueView } from '@/components/KOTQueueView';
+import { KOTLogView } from '@/components/KOTLogView';
+import { PrintProvider, createPrinter } from '@/components/print/PrintProvider';
 import { ShishaTimerView } from '@/components/ShishaTimerView';
 import { LiveOrdersView } from '@/components/LiveOrdersView';
 import { PrivateBookingsView } from '@/components/PrivateBookingsView';
 import { BillingView } from '@/components/BillingView';
 import { ShiftRegisterView } from '@/components/ShiftRegisterView';
 import { SettingsView } from '@/components/SettingsView';
-import { ThermalReceipt } from '@/components/ThermalReceipt';
 import { TopBar } from '@/components/TopBar';
 import { NavTabs, WebTabKey, allowedTabs } from '@/components/NavTabs';
 import { AuthProvider, useAuth } from '@/components/auth/AuthProvider';
@@ -57,6 +58,32 @@ const DEFAULT_SETTINGS: AppSettings = {
   shishaDefaultDuration: 45,
 };
 
+/** API order → screen model */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapOrder(o: any): Order {
+  return {
+    id: o._id || o.orderNumber,
+    orderNumber: o.orderNumber,
+    invoiceNumber: o.invoiceNumber,
+    location: o.tableName,
+    guest: o.guestName || '',
+    phone: o.guestPhone || '',
+    staff: o.staffName || '',
+    bookingId: o.bookingId || null,
+    items: o.items || [],
+    notes: o.notes || '',
+    shishaAdvance: o.shishaAdvance || 0,
+    duration: o.duration || 45,
+    created: o.createdAt || new Date().toISOString(),
+    closedAt: o.closedAt,
+    payments: o.payments || [],
+    closed: o.closed || false,
+    taxPercent: o.taxPercent ?? 5,
+    discountAmount: o.discountAmount || 0,
+    discountReason: o.discountReason,
+  };
+}
+
 export default function POSHomePage() {
   return (
     <AuthProvider>
@@ -76,25 +103,15 @@ function POSApp() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const printer = useMemo(() => createPrinter(settings), [settings]);
 
   const visibleTabs = useMemo(() => allowedTabs(auth.permissions), [auth.permissions]);
   const [selectedTab, setActiveTab] = useState<WebTabKey>('order');
   const activeTab: WebTabKey = visibleTabs.includes(selectedTab) ? selectedTab : visibleTabs[0];
-  const isStationDisplay = !auth.user && auth.device?.type === 'DISPLAY';
 
   const [currentLocation, setCurrentLocation] = useState<string>('Table 1');
   const [selectedBillingOrderId, setSelectedBillingOrderId] = useState<string>('');
 
-  const [printModal, setPrintModal] = useState<{
-    isOpen: boolean;
-    type: 'kot' | 'bill';
-    kot?: KOT;
-    order?: Order;
-    booking?: PrivateBooking;
-  }>({
-    isOpen: false,
-    type: 'kot',
-  });
 
   const [currentTime, setCurrentTime] = useState<string>('');
 
@@ -165,26 +182,7 @@ function POSApp() {
       const ordersRes = await fetch('/api/v1/orders?status=all');
       const ordersJson = await ordersRes.json();
       if (ordersJson.success && ordersJson.data) {
-        setOrders(
-          ordersJson.data.map((o: any) => ({
-            id: o._id || o.orderNumber,
-            orderNumber: o.orderNumber,
-            location: o.tableName,
-            guest: o.guestName || '',
-            phone: o.guestPhone || '',
-            staff: o.staffName || 'Captain 1',
-            bookingId: o.bookingId || null,
-            items: o.items || [],
-            notes: o.notes || '',
-            shishaAdvance: o.shishaAdvance || 0,
-            duration: o.duration || 45,
-            created: o.createdAt || new Date().toISOString(),
-            payments: o.payments || [],
-            closed: o.closed || false,
-            taxPercent: o.taxPercent || 5,
-            discountAmount: o.discountAmount || 0,
-          }))
-        );
+        setOrders(ordersJson.data.map(mapOrder));
       }
 
       // Fetch KOTs
@@ -227,6 +225,13 @@ function POSApp() {
             notes: b.notes,
           }))
         );
+      }
+
+      // Lounge details printed on bills
+      const settingsRes = await fetch('/api/v1/settings');
+      const settingsJson = await settingsRes.json();
+      if (settingsJson.success && settingsJson.data) {
+        setSettings((prev) => ({ ...prev, ...settingsJson.data, soundAlerts: prev.soundAlerts }));
       }
     } catch (err: any) {
       console.warn('Backend fetch error, continuing gracefully:', err);
@@ -326,6 +331,8 @@ function POSApp() {
         if (res.status !== 401) alert(json.error || 'Failed to submit order');
         return false;
       }
+      // One slip per station from the counter printer; the runner takes it to the kitchen/bar/shisha
+      printer.printKots(json.data?.kots ?? []);
       if (settings.soundAlerts) playOrderChime();
       await refreshAllData();
       setActiveTab('live');
@@ -333,26 +340,6 @@ function POSApp() {
     } catch {
       alert('Cannot reach the server. The order was not sent — please try again.');
       return false;
-    }
-  };
-
-  // KOT status change
-  const handleKOTStatusChange = async (kotId: string, newStatus: KOTStatus) => {
-    try {
-      const res = await fetch('/api/v1/kots', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kotId, status: newStatus }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        if (newStatus === 'READY' && settings.soundAlerts) {
-          playTimerAlert();
-        }
-        await refreshAllData();
-      }
-    } catch {
-      // ignore
     }
   };
 
@@ -434,6 +421,8 @@ function POSApp() {
         method: 'Cash' | 'UPI' | 'Card' | 'Credit Account';
         creditRef?: string;
       }>;
+      /** Room charge for the printed receipt */
+      booking?: BillBooking;
     }
   ) => {
     const send = (approvalPin?: string) =>
@@ -463,6 +452,7 @@ function POSApp() {
         alert(json.error || 'Could not settle the bill');
         return false;
       }
+      if (json.data?.closed) printer.printBill(json.data, options?.booking);
       await refreshAllData();
       return true;
     } catch {
@@ -484,6 +474,7 @@ function POSApp() {
   );
 
   return (
+    <PrintProvider printer={printer}>
     <div className="min-h-screen bg-[#0a0c10] text-slate-100 flex flex-col selection:bg-[#9f1119] selection:text-white">
       <header className="no-print bg-[#10131a] border-b border-neutral-800/80 px-4 py-3 sticky top-0 z-40 shadow-lg">
         <div className="max-w-[1720px] mx-auto">
@@ -536,15 +527,7 @@ function POSApp() {
           />
         )}
 
-        {activeTab === 'kot' && (
-          <KOTQueueView
-            kots={isStationDisplay ? kots.filter((k) => k.station === auth.device?.station) : kots}
-            onStatusChange={handleKOTStatusChange}
-            onPrintKot={(kot) =>
-              setPrintModal({ isOpen: true, type: 'kot', kot })
-            }
-          />
-        )}
+        {activeTab === 'kot' && <KOTLogView kots={kots} />}
 
         {activeTab === 'shisha' && (
           <ShishaTimerView
@@ -591,7 +574,10 @@ function POSApp() {
             onSelectOrderId={(id) => setSelectedBillingOrderId(id)}
             onRecordPayment={handleRecordPayment}
             onPrintReceipt={(order, booking) =>
-              setPrintModal({ isOpen: true, type: 'bill', order, booking })
+              printer.printBill(
+                order,
+                booking ? { venue: booking.venue, rate: booking.rate, hours: booking.hours, advance: booking.advance } : undefined
+              )
             }
           />
         )}
@@ -606,8 +592,22 @@ function POSApp() {
           <SettingsView
             settings={settings}
             menu={menu}
-            onUpdateSettings={(newSettings) => setSettings(newSettings)}
-            onUpdateMenu={(newMenu) => setMenu(newMenu)}
+            onUpdateSettings={async (next) => {
+              try {
+                const res = await fetch('/api/v1/settings', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(next),
+                });
+                const json = await res.json();
+                if (!json.success) return json.error || 'Could not save settings';
+                setSettings((prev) => ({ ...prev, ...json.data, soundAlerts: next.soundAlerts }));
+                return null;
+              } catch {
+                return 'Cannot reach the server. Settings were not saved.';
+              }
+            }}
+            onMenuChanged={refreshAllData}
             onExportData={() => {
               const dump = JSON.stringify({ orders, kots, bookings, menu, settings });
               const blob = new Blob([dump], { type: 'application/json' });
@@ -617,50 +617,11 @@ function POSApp() {
               a.download = `layali_backup_${new Date().toISOString().slice(0, 10)}.json`;
               a.click();
             }}
-            onImportData={(jsonStr) => {
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (parsed.menu) setMenu(parsed.menu);
-                if (parsed.settings) setSettings(parsed.settings);
-                alert('Data restored successfully.');
-              } catch {
-                alert('Invalid JSON file.');
-              }
-            }}
-            onResetData={() => refreshAllData()}
           />
         )}
       </main>
 
-      {/* Interactive Modal for Thermal 80mm Printout */}
-      {printModal.isOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-xl overflow-hidden max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <ThermalReceipt
-              type={printModal.type}
-              kot={printModal.kot}
-              order={printModal.order}
-              booking={printModal.booking}
-              settings={settings}
-              onClose={() => setPrintModal({ isOpen: false, type: 'kot' })}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Hidden container exclusively formatted for window.print() */}
-      <div id="thermal-print-container" className="hidden print:block">
-        {printModal.isOpen && (
-          <ThermalReceipt
-            type={printModal.type}
-            kot={printModal.kot}
-            order={printModal.order}
-            booking={printModal.booking}
-            settings={settings}
-          />
-        )}
-      </div>
-
     </div>
+    </PrintProvider>
   );
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
-import { DeviceModel, DEVICE_STATIONS, DEVICE_TYPES, DeviceStation, DeviceType } from '@/models/Device';
+import { DeviceModel, DeviceStation, DeviceType } from '@/models/Device';
 import { PairingCodeModel } from '@/models/PairingCode';
 import { generatePairingCode, generateToken, sha256 } from '@/lib/auth/crypto';
 import { audit, jsonError, requireAuth, respondWithDevice, revokeDeviceSessions, str, serverError } from '@/lib/auth';
@@ -10,12 +10,10 @@ const PAIRING_CODE_MINUTES = 10;
 function parseDeviceInput(body: Record<string, unknown>): { name: string; type: DeviceType; station: DeviceStation | null } | string {
   const name = str(body.name, 40);
   // This product pairs counter terminals only (no waiter phones or station displays)
-  const type = (str(body.type, 20) || 'TERMINAL') as DeviceType;
-  const station = (str(body.station, 30) || null) as DeviceStation | null;
+  const type = str(body.type, 20) || 'TERMINAL';
   if (!name) return 'Enter a device name';
-  if (!DEVICE_TYPES.includes(type) || type !== 'TERMINAL') return 'Only counter terminals can be paired';
-  if (type === 'DISPLAY' && (!station || !DEVICE_STATIONS.includes(station))) return 'Choose the station for this display';
-  return { name, type, station: type === 'DISPLAY' ? station : null };
+  if (type !== 'TERMINAL') return 'Only counter terminals can be paired';
+  return { name, type: 'TERMINAL', station: null };
 }
 
 export async function GET(req: NextRequest) {

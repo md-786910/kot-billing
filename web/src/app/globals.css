@@ -54,22 +54,8 @@ body {
     display: none !important;
   }
 
-  #thermal-print-container {
-    display: block !important;
-    width: 100% !important;
-    max-width: 74mm !important;
-    margin: 0 auto !important;
-    background: #fff !important;
-    color: #000 !important;
-  }
-
   .screen-only {
     display: none !important;
   }
 }
 
-@media screen {
-  #thermal-print-container {
-    display: none;
-  }
-}

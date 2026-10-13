@@ -27,9 +27,9 @@ interface DeviceRow {
   isCurrent: boolean;
 }
 
-const ROLES = Object.keys(ROLE_LABELS) as UserRole[];
-const DEVICE_LABELS = { TERMINAL: 'POS terminal', MOBILE: 'Waiter phone', DISPLAY: 'Station display' } as const;
-const STATIONS = ['Kitchen', 'Beverage Counter', 'Shisha Master'];
+// Counter-only product: orders are taken at the counter, KOTs and bills are printed
+const ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'CASHIER'];
+const DEVICE_LABELS = { TERMINAL: 'Counter terminal', MOBILE: 'Phone', DISPLAY: 'Display' } as const;
 
 /** Admin: staff accounts and paired devices. */
 export function TeamView() {
@@ -75,7 +75,7 @@ export function TeamView() {
         <header className="flex items-center justify-between p-4 border-b border-neutral-800">
           <div>
             <h2 className="text-lg font-bold text-white">Staff</h2>
-            <p className="text-sm text-neutral-400">PIN for terminals and phones. Username + password for owner and managers.</p>
+            <p className="text-sm text-neutral-400">PIN for the counter. Username + password for owner and managers.</p>
           </div>
           <Button onClick={() => setEditing('new')}><UserPlus className="w-4 h-4" /> Add staff</Button>
         </header>
@@ -109,11 +109,11 @@ export function TeamView() {
         <header className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-neutral-800">
           <div>
             <h2 className="text-lg font-bold text-white">Devices</h2>
-            <p className="text-sm text-neutral-400">Only paired devices can use staff PIN sign-in.</p>
+            <p className="text-sm text-neutral-400">Counter computers where staff sign in with their PIN.</p>
           </div>
           <div className="flex gap-2">
             {!thisDevice && <Button variant="secondary" onClick={() => setPairing('this')}><Monitor className="w-4 h-4" /> Pair this browser</Button>}
-            <Button onClick={() => setPairing('code')}><Plus className="w-4 h-4" /> Pair a device</Button>
+            <Button onClick={() => setPairing('code')}><Plus className="w-4 h-4" /> Pair a computer</Button>
           </div>
         </header>
         {devices.length === 0 && <p className="p-4 text-sm text-neutral-400">No devices paired yet.</p>}
@@ -170,7 +170,7 @@ function StaffDialog({ staff, onClose, onSaved }: { staff: StaffRow | null; onCl
   const isNew = !staff;
   const [form, setForm] = useState({
     name: staff?.name ?? '',
-    role: staff?.role ?? ('CAPTAIN' as UserRole),
+    role: staff?.role ?? ('CASHIER' as UserRole),
     phone: staff?.phone ?? '',
     pin: '',
     username: staff?.username ?? '',
@@ -206,7 +206,7 @@ function StaffDialog({ staff, onClose, onSaved }: { staff: StaffRow | null; onCl
       <form onSubmit={submit} className="space-y-3">
         <Field label="Name" value={form.name} onChange={set('name')} required />
         <SelectField label="Role" value={form.role} onChange={set('role')}>
-          {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          {(ROLES.includes(form.role) ? ROLES : [...ROLES, form.role]).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
         </SelectField>
         <Field label="Phone" value={form.phone} onChange={set('phone')} inputMode="tel" />
         <Field
@@ -250,7 +250,7 @@ function PairDialog({ mode, onClose, onPairedThis, onCodeCreated }: {
   onPairedThis: () => void;
   onCodeCreated: () => void;
 }) {
-  const [form, setForm] = useState({ name: '', type: mode === 'this' ? 'TERMINAL' : 'MOBILE', station: 'Kitchen' });
+  const [form, setForm] = useState({ name: '', type: 'TERMINAL' });
   const [code, setCode] = useState<{ code: string; expiresAt: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -275,7 +275,7 @@ function PairDialog({ mode, onClose, onPairedThis, onCodeCreated }: {
     return (
       <Modal title="Pairing code" onClose={onClose}>
         <p className="text-sm text-neutral-400">
-          On the new device, choose <span className="text-white">Have a pairing code?</span> (web) or open the waiter app, then enter:
+          On the counter computer, open Layali, choose <span className="text-white">Have a pairing code?</span> and enter:
         </p>
         <p className="my-5 text-center font-mono text-4xl font-bold tracking-[0.3em] text-[#d4af37]">{code.code}</p>
         <p className="text-sm text-neutral-500 text-center">Single use · expires at {new Date(code.expiresAt).toLocaleTimeString()}</p>
@@ -285,20 +285,9 @@ function PairDialog({ mode, onClose, onPairedThis, onCodeCreated }: {
   }
 
   return (
-    <Modal title={mode === 'this' ? 'Pair this browser' : 'Pair a device'} onClose={onClose}>
+    <Modal title={mode === 'this' ? 'Pair this browser' : 'Pair a counter computer'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
-        <Field label="Device name" value={form.name} onChange={set('name')} placeholder={form.type === 'MOBILE' ? 'e.g. Captain phone 1' : 'e.g. Cashier desk'} required autoFocus />
-        <SelectField label="Type" value={form.type} onChange={set('type')}>
-          {Object.entries(DEVICE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </SelectField>
-        {form.type === 'DISPLAY' && (
-          <SelectField label="Station" value={form.station} onChange={set('station')}>
-            {STATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-          </SelectField>
-        )}
-        {form.type === 'DISPLAY' && (
-          <p className="text-sm text-neutral-400">Displays show only their station&apos;s tickets and need no staff sign-in.</p>
-        )}
+        <Field label="Device name" value={form.name} onChange={set('name')} placeholder="e.g. Cashier desk" required autoFocus />
         <ErrorText>{error}</ErrorText>
         <Button type="submit" className="w-full" disabled={busy}>
           {busy ? 'Please wait…' : mode === 'this' ? 'Pair this browser' : 'Get pairing code'}

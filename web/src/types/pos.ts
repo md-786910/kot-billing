@@ -84,6 +84,9 @@ export interface TableTransferRecord {
 export interface Order {
   id: string;
   orderNumber?: string;
+  /** GST invoice serial, set when the bill is settled */
+  invoiceNumber?: string;
+  closedAt?: string;
   location: string;
   guest: string;
   phone: string;
@@ -133,6 +136,14 @@ export interface AppSettings {
   soundAlerts: boolean;
   shishaDefaultDuration: number;
   upiId?: string;
+}
+
+/** Private room charge as printed on the bill */
+export interface BillBooking {
+  venue: string;
+  rate: number;
+  hours: number;
+  advance: number;
 }
 
 export interface CashDrop {

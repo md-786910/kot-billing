@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (!guard.ok) return guard.response;
   try {
     const doc = await SettingsModel.findOne().lean();
-    return NextResponse.json({ success: true, data: publicSettings(doc as Record<string, unknown> | null) });
+    return NextResponse.json({ success: true, data: publicSettings(doc as unknown as Record<string, unknown> | null) });
   } catch (error) {
     return serverError(error);
   }
@@ -68,7 +68,7 @@ export async function PATCH(req: NextRequest) {
 
     const doc = await SettingsModel.findOneAndUpdate({}, { $set: update }, { upsert: true, returnDocument: 'after' }).lean();
     await audit(guard.auth, 'settings.updated', null, update);
-    return NextResponse.json({ success: true, data: publicSettings(doc as Record<string, unknown> | null) });
+    return NextResponse.json({ success: true, data: publicSettings(doc as unknown as Record<string, unknown> | null) });
   } catch (error) {
     return serverError(error);
   }

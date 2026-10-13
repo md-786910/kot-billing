@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useMemo, useRef } from 'react';
-import { Order, PrivateBooking, AppSettings } from '../types/pos';
+import { Order, PrivateBooking, AppSettings, BillBooking } from '../types/pos';
 import { formatINR, formatDateTime } from '../utils/format';
 import {
   CreditCard,
@@ -51,6 +51,8 @@ interface BillingViewProps {
         method: 'Cash' | 'UPI' | 'Card' | 'Credit Account';
         creditRef?: string;
       }>;
+      /** Room charge for the printed receipt */
+      booking?: BillBooking;
     }
   ) => Promise<boolean>;
   onPrintReceipt: (order: Order, booking?: PrivateBooking) => void;
@@ -155,6 +157,11 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const upiId = settings.upiId || 'layali@okhdfcbank';
   const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(settings.loungeName)}&am=${balanceDue}&cu=INR`;
 
+  // Room charge exactly as billed, for the printed receipt
+  const printBooking: BillBooking | undefined = linkedBooking
+    ? { venue: linkedBooking.venue, rate: linkedBooking.rate, hours: billedHours, advance: linkedBooking.advance }
+    : undefined;
+
   // Confirmation toasts only appear once the server has accepted the settlement
   const settlingRef = useRef(false);
   const handleSettle = async () => {
@@ -186,6 +193,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
           discount: discountAmount,
           discountReason: discountAmount > 0 ? discountReason : undefined,
           taxPercent: activeTaxPercent,
+          booking: printBooking,
           payments: validTenders,
         }
       );
@@ -218,6 +226,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
           discount: discountAmount,
           discountReason: discountAmount > 0 ? discountReason : undefined,
           taxPercent: activeTaxPercent,
+          booking: printBooking,
         }
       );
       if (!saved) return;

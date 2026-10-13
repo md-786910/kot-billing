@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { usePrinter } from '@/components/print/PrintProvider';
 import {
   MenuItem,
   CartItem,
@@ -114,6 +115,7 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
   const [guestName, setGuestName] = useState<string>('');
   const [guestPhone, setGuestPhone] = useState<string>('');
   const auth = useAuth();
+  const printer = usePrinter();
   const signedInName = auth.user?.name ?? '';
   const canVoid = auth.can('order.void');
   const [staff, setStaff] = useState<string>(signedInName);
@@ -388,6 +390,8 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
       });
       const json = await res.json();
       if (json.success) {
+        // Paper cancel slip so the kitchen stops preparing
+        printer.printCancel(json.voidKot);
         setSuccessToast(`Order for Table ${currentLocation} has been voided and table released.`);
         setIsVoidOrderModalOpen(false);
         setVoidOrderReason('Guest Walkout / Emergency');
@@ -426,7 +430,8 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
       });
       const json = await res.json();
       if (json.success) {
-        setSuccessToast(`Item voided: ${selectedVoidItem?.name}. Station void ticket generated.`);
+        printer.printCancel(json.voidKot);
+        setSuccessToast(`Item voided: ${selectedVoidItem?.name}. Cancel slip printed for the kitchen.`);
         setIsVoidModalOpen(false);
         setSelectedVoidItemIndex(null);
         setSelectedVoidItem(null);

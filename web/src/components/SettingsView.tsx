@@ -5,8 +5,6 @@ import { formatINR } from '../utils/format';
 import {
   Settings,
   Download,
-  Upload,
-  RotateCcw,
   Plus,
   Edit2,
   Trash2,
@@ -19,21 +17,19 @@ import {
 interface SettingsViewProps {
   settings: AppSettings;
   menu: MenuItem[];
-  onUpdateSettings: (newSettings: AppSettings) => void;
-  onUpdateMenu: (newMenu: MenuItem[]) => void;
+  /** Saves to the server; resolves to an error message, or null when saved */
+  onUpdateSettings: (newSettings: AppSettings) => Promise<string | null>;
+  /** Called after a menu change is saved, to reload the menu */
+  onMenuChanged: () => void;
   onExportData: () => void;
-  onImportData: (jsonStr: string) => void;
-  onResetData: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   menu,
   onUpdateSettings,
-  onUpdateMenu,
+  onMenuChanged,
   onExportData,
-  onImportData,
-  onResetData,
 }) => {
   // Settings form
   const [formData, setFormData] = useState<AppSettings>(settings);
@@ -46,55 +42,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newItemStation, setNewItemStation] = useState<Station>('Kitchen');
   const [newItemCategory, setNewItemCategory] = useState('Snacks');
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateSettings(formData);
-    alert('Settings saved successfully.');
+    const error = await onUpdateSettings(formData);
+    alert(error ?? 'Settings saved. New bills will use these details.');
   };
 
-  const handlePriceUpdate = (id: string) => {
-    onUpdateMenu(
-      menu.map((m) => (m.id === id ? { ...m, price: Number(editPrice) } : m))
-    );
-    setEditingItemId(null);
+  // Menu changes are saved on the server, then the menu reloads
+  const saveMenu = async (method: 'POST' | 'PATCH', body: Record<string, unknown>) => {
+    try {
+      const res = await fetch('/api/v1/menu', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        alert(json.error || 'Could not save the menu change');
+        return false;
+      }
+      onMenuChanged();
+      return true;
+    } catch {
+      alert('Cannot reach the server. The menu was not changed.');
+      return false;
+    }
+  };
+
+  const handlePriceUpdate = async (id: string) => {
+    if (await saveMenu('PATCH', { id, price: Number(editPrice) })) setEditingItemId(null);
   };
 
   const handleToggleAvailable = (id: string) => {
-    onUpdateMenu(
-      menu.map((m) => (m.id === id ? { ...m, isAvailable: !m.isAvailable } : m))
-    );
+    const item = menu.find((m) => m.id === id);
+    if (item) saveMenu('PATCH', { id, isAvailable: !item.isAvailable });
   };
 
-  const handleAddItem = (e: React.FormEvent) => {
+  const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim()) return;
-    const newItem: MenuItem = {
-      id: 'custom-' + Date.now(),
+    const saved = await saveMenu('POST', {
       name: newItemName.trim(),
       price: Number(newItemPrice),
       station: newItemStation,
       category: newItemCategory.trim(),
-      isAvailable: true,
-    };
-    onUpdateMenu([...menu, newItem]);
-    setNewItemName('');
-    setNewItemPrice(99);
-  };
-
-  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const content = event.target?.result as string;
-        onImportData(content);
-        alert('Backup data imported successfully!');
-      } catch {
-        alert('Failed to parse backup file. Please ensure it is valid JSON.');
-      }
-    };
-    reader.readAsText(file);
+    });
+    if (saved) {
+      setNewItemName('');
+      setNewItemPrice(99);
+    }
   };
 
   return (
@@ -349,9 +345,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* Backup, Export & Clear */}
       <div className="bg-[#14161f] border border-neutral-800 rounded-xl p-5 space-y-4">
-        <h3 className="text-base font-bold text-white">Database Backup & Recovery</h3>
-        <p className="text-xs text-neutral-400">
-          Export your restaurant order logs, private bookings, and station KOT queues to a JSON backup file or restore previously saved data.
+        <h3 className="text-base font-bold text-white">Export</h3>
+        <p className="text-sm text-neutral-400">
+          Download orders, bookings and KOTs as a JSON file for your records.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -363,32 +359,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>Export Backup JSON</span>
           </button>
 
-          <label className="px-4 py-2 bg-[#1b1e2a] hover:bg-[#252a3b] text-white rounded-lg text-xs font-semibold border border-neutral-700 flex items-center gap-2 cursor-pointer transition-colors">
-            <Upload className="w-4 h-4 text-emerald-400" />
-            <span>Import Backup JSON</span>
-            <input
-              type="file"
-              accept=".json,application/json"
-              onChange={handleFileImport}
-              className="hidden"
-            />
-          </label>
 
-          <button
-            onClick={() => {
-              if (
-                window.confirm(
-                  'Are you sure you want to reset all order registers and revert to factory menu data?'
-                )
-              ) {
-                onResetData();
-              }
-            }}
-            className="px-4 py-2 bg-rose-950/60 hover:bg-rose-900 text-rose-200 rounded-lg text-xs font-semibold border border-rose-800 flex items-center gap-2 cursor-pointer transition-colors ml-auto"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Reset Database to Defaults</span>
-          </button>
         </div>
       </div>
     </div>

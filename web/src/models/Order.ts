@@ -4,7 +4,6 @@ import { Station } from './MenuItem';
 export type OrderStatus = 'OPEN' | 'SETTLED' | 'VOIDED' | 'MERGED';
 
 export interface IOrderItem {
-  invoiceNumber?: string;
   name: string;
   price: number;
   station: Station;
@@ -34,6 +33,7 @@ export interface ITableTransferRecord {
 }
 
 export interface IOrder extends Document {
+  invoiceNumber?: string;
   orderNumber: string;
   tableId?: string;
   tableName: string;

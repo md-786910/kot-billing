@@ -1,101 +1,75 @@
-# Layali Restaurant & Lounge POS + KOT System
+# Layali Restaurant & Lounge POS
 
-Production-grade, modular Restaurant POS, Multi-Station KOT Routing, Shisha Live Timers, Private Cabin Bookings, and Thermal Billing platform.
-
----
-
-## Workspace Architecture
-
-```
-layali/
-├── web/                        # Next.js 16 Fullstack App (Web POS, KDS, Cashier, Admin & MongoDB Atlas API)
-│   ├── src/
-│   │   ├── app/                # App Router pages & REST/SSE APIs (/api/v1/...)
-│   │   ├── components/         # Modular Views (TopBar, NavTabs, POS, KDS, Shisha, Cashier, Bookings, ThermalReceipt)
-│   │   ├── models/             # Mongoose models with high-speed compound indexes
-│   │   ├── lib/                # MongoDB connection pooling & Realtime SSE Dispatcher
-│   │   └── utils/              # Audio alert synthesis & Currency/Date formatters
-│   ├── .env.example            # MongoDB Atlas URI configuration
-│   └── package.json
-│
-├── mobile/                     # React Native (Expo) Waiter / Captain Mobile POS
-│   ├── src/
-│   │   ├── constants/          # Colors, theme, spacing
-│   │   ├── types/              # Mobile TypeScript interfaces
-│   │   ├── services/           # API client communicating with Next.js backend
-│   │   ├── context/            # POSContext global state & actions
-│   │   ├── components/         # Modular Components (Header, BottomNav, TableCard, MenuItemCard, StickyCartBar, KOTCard, ShishaCard, Modals)
-│   │   └── screens/            # Modular Screens (TablesScreen, OrderScreen, KOTsScreen, ShishaScreen)
-│   ├── App.tsx                 # Clean entry point wrapped in POSProvider
-│   └── package.json
-│
-├── plan/
-│   └── PROJECT_BLUEPRINT.md    # Master Architecture Blueprint & Domain Specifications
-│
-└── layali-kot-&-restaurant-pos/ # Original prototype reference
-```
+Counter POS for Layali: orders are entered at the counter, KOTs and customer bills print on the counter's thermal printer, and the cashier runs the cash drawer. No waiter or kitchen apps are needed.
 
 ---
 
-## Quick Start Guide
+## How the restaurant uses it
 
-### 1. Web Application & Backend (Next.js 16 + MongoDB Atlas)
+1. **Waiter** takes the order at the table and tells the counter.
+2. **Counter (cashier / manager)** punches the order in the web POS → one **KOT slip per station** (Kitchen, Bar, Shisha) prints immediately. The runner takes it to the station.
+3. Extra rounds print new KOTs. A **void** prints a **CANCEL** slip so the kitchen stops preparing.
+4. **Bill**: "Print bill" for the guest, then **Settle** (Cash / UPI / Card / Split / Khata) → the receipt prints with its GST invoice number and the table is freed.
+5. **Cash drawer**: open the shift with a float, record cash drops, close the shift → the **Z-report** prints.
+6. **Admin**: menu & prices, out-of-stock, staff & PINs, counter computers, lounge details printed on bills (name, address, GSTIN, GST rate).
 
-1. Navigate to the web application:
+| Role | Can do |
+| :--- | :--- |
+| Cashier | Punch orders, move/merge tables, settle bills, bookings, shisha timers, cash drawer. Voids and discounts over 10% need a manager's PIN. |
+| Manager | Everything a cashier can, plus voids, any discount, out-of-stock, reports |
+| Owner / Admin | Everything, plus staff, counter computers, menu prices and lounge settings |
+
+---
+
+## Workspace
+
+```
+kot-billing/
+├── web/                          # Next.js 16 app: counter POS + admin + REST API (/api/v1) + MongoDB
+│   └── src/
+│       ├── app/                  # Page and API route handlers
+│       ├── components/           # POS, billing, KOT log, shifts, bookings, admin, auth
+│       ├── lib/print/            # 80 mm print templates (KOT, cancel, bill, Z-report) + printer
+│       ├── lib/auth/             # Sessions, PIN/password, roles, audit
+│       └── models/               # Mongoose models
+├── plan/PROJECT_BLUEPRINT.md
+└── layali-kot-&-restaurant-pos/  # Original prototype (reference only)
+```
+
+---
+
+## Setup
+
+1. Configure MongoDB in `web/.env.local` (MongoDB 7 or newer, e.g. Atlas):
+   ```bash
+   MONGODB_URI="mongodb+srv://<user>:<password>@cluster0.mongodb.net/layali_pos"
+   ```
+   If the counter opens the app over plain `http://` on the local network, also set `COOKIE_SECURE=false`. HTTPS is preferred.
+2. Run it:
    ```bash
    cd web
+   npm install
+   npm run build && npm start      # production
    ```
-2. Configure your MongoDB Atlas connection in `.env.local`:
-   ```bash
-   MONGODB_URI="mongodb+srv://<username>:<password>@cluster0.mongodb.net/layali_pos?retryWrites=true&w=majority&appName=LayaliPOS"
-   ```
-3. Start the Next.js development server:
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000) in your browser.
-   - Upon first load, the server connects to MongoDB and seeds the 11 tables, categories, menu items and settings.
-   - The first visit shows **Set up Layali POS**: create the owner account (username, password and a staff PIN).
+3. Open the app. The first visit shows **Set up Layali POS**: create the owner account (username, password, staff PIN). Tables, menu and settings are created automatically.
+4. In **Lounge Admin**, enter the real lounge name, address, phone, **GSTIN** and GST rate. They are printed on every bill.
+5. In **Staff & Devices**: add cashiers/managers, then **Pair this browser** on the counter computer (or create a pairing code for another counter computer).
+
+### Printer (counter PC)
+
+- Connect the 80 mm thermal printer and make it the **default printer**. In its driver set paper to 80 mm (receipt / roll) and margins to none.
+- Start Chrome in kiosk printing mode so slips print straight away without a dialog:
+  ```
+  chrome --kiosk-printing http://<server-address>:3000
+  ```
+  (Windows: add `--kiosk-printing` to the Chrome shortcut's Target.)
+- Each KOT station prints on its own cut. Reprint any KOT from the **KOT log** tab, and any bill from **Cashier & Settlements**.
 
 ---
 
-### 2. Waiter / Captain Mobile App (React Native / Expo)
+## Sign-in & security
 
-1. Navigate to the mobile application:
-   ```bash
-   cd mobile
-   ```
-2. Start the Expo development server:
-   ```bash
-   npx expo start
-   ```
-3. Run on your physical phone (via Expo Go app) or on an Android/iOS emulator:
-   - On the web, go to **Staff & Devices → Pair a device**, choose *Waiter phone*, and enter the server address (e.g. `http://192.168.1.15:3000`) and the 6-digit code in the app.
-   - Staff tap their name and enter their PIN, then punch orders. KOTs appear on the kitchen and shisha screens in real time.
-
----
-
-## Sign-in & Devices
-
-| Who | How they sign in |
-| :--- | :--- |
-| Owner / managers | Username + password, from any browser |
-| Staff on a paired terminal or phone | Tap their name + PIN (verified on the server; the session only works on that device) |
-| Kitchen / bar / shisha displays | Paired once as a *Station display*; they show only their station's tickets and need no sign-in |
-
-- Pair devices from **Staff & Devices** (one-time 6-digit code, valid 10 minutes), or use **Pair this browser** on the terminal itself. **Revoke** signs everyone out of that device immediately.
-- Terminals lock after 5 minutes idle (15 minutes for a password session). **Lock** switches staff.
-- Voids and discounts above 10% need a manager. Other staff can continue if a manager enters their PIN on the same screen. Every sign-in, void, discount and settlement is written to the audit log.
-- Five wrong PINs or passwords lock that account for 5 minutes. An admin can unlock it from **Staff & Devices**.
-- Cookies are `Secure` in production. If the restaurant server runs over plain HTTP on the local network, set `COOKIE_SECURE=false` in `.env.local`. Serving over HTTPS is preferred.
-
-## Stations & User Roles
-
-| Station / Terminal | Screen / View | Description |
-| :--- | :--- | :--- |
-| **Floor Captain (Mobile)** | `mobile/src/screens/` | Table selection, category carousel, modifiers, instant KOT punch |
-| **Kitchen Station (Web)** | KOT Queue (`Kitchen`) | Live food tickets (Burgers, Rice, Fries, Pasta), status advancement, audio chime |
-| **Bar / Beverage (Web)** | KOT Queue (`Beverage`) | Live drinks queue (Mojitos, Sodas, Shakes) |
-| **Shisha Master (Web/Mobile)** | Shisha Timers | Active coal timers, countdown alarms, +15m extensions |
-| **Cashier Desk (Web)** | Cashier & Settlements | Split payments (Cash/UPI/Card/Khata), GST tax, 80mm ESC/POS thermal receipt |
-| **Lounge Admin (Web)** | Lounge Settings | Menu prices, table layout, GST number, daily data backup |
+- Owner/managers sign in with username + password from any browser; staff tap their name + PIN on a paired counter computer.
+- Terminals lock after 5 minutes idle; **Lock** switches staff. Five wrong PINs/passwords lock that account for 5 minutes (admin can unlock).
+- Voids and discounts above 10% need a manager; every sign-in, void, discount, settlement and setting change is in the audit log.
+- Bills get consecutive GST invoice numbers per financial year (e.g. `2026-27/0012`).
