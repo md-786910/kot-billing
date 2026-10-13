@@ -144,13 +144,11 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
 
   return (
     <View style={styles.container}>
-      {/* Table status + table actions (the Header already shows the table name) */}
+      {/* Table status, Menu | Ordered switch, and table actions (the Header already shows the table name) */}
       <View style={styles.top}>
         <AppText variant="caption" tone={activeOrder ? 'secondary' : 'muted'} money numberOfLines={1} testID="order-status">
           {statusLine}
         </AppText>
-
-        {actionTiles.length > 0 ? <View style={styles.tiles}>{actionTiles}</View> : null}
 
         {activeOrder ? (
           <Segmented<OrderView>
@@ -162,6 +160,10 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
             ]}
           />
         ) : null}
+
+        {/* Bill, Move, Merge and Void act on the table's bill, so they live on the Ordered tab;
+            the Menu tab keeps the full height for adding items */}
+        {showRunning && actionTiles.length > 0 ? <View style={styles.tiles}>{actionTiles}</View> : null}
       </View>
 
       {showRunning && activeOrder ? (
