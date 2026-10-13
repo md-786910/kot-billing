@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import mongoose from 'mongoose';
 import { UserModel } from '@/models/User';
 import { hashSecret } from '@/lib/auth/crypto';
 import { audit, createSession, isSetupRequired, jsonError, PIN_PATTERN, respondWithSession, str, serverError } from '@/lib/auth';
@@ -20,16 +21,24 @@ export async function POST(req: NextRequest) {
     if (password.length < 8) return jsonError('Password must be at least 8 characters', 400);
     if (!PIN_PATTERN.test(pin)) return jsonError('PIN must be 4–6 digits', 400);
 
-    // Retire demo staff from earlier builds (their PINs were public); the owner adds real staff next
-    await UserModel.updateMany({}, { isActive: false });
+    // Only one setup may ever run, even if several requests arrive at once
+    if (!(await claimSetupLock())) return jsonError('Setup is already complete', 409);
 
-    const owner = await UserModel.create({
-      name,
-      username,
-      role: 'ADMIN',
-      passwordHash: await hashSecret(password),
-      pinHash: await hashSecret(pin),
-    });
+    let owner;
+    try {
+      // Retire demo staff from earlier builds (their PINs were public); the owner adds real staff next
+      await UserModel.updateMany({}, { isActive: false });
+      owner = await UserModel.create({
+        name,
+        username,
+        role: 'ADMIN',
+        passwordHash: await hashSecret(password),
+        pinHash: await hashSecret(pin),
+      });
+    } catch (error) {
+      await releaseSetupLock();
+      throw error;
+    }
 
     const user = { id: String(owner._id), name: owner.name, role: owner.role };
     await audit({ user, device: null, sessionId: null, permissions: [], actorName: user.name }, 'auth.setup', user.id);
@@ -39,4 +48,18 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     return serverError(error);
   }
+}
+
+async function claimSetupLock(): Promise<boolean> {
+  try {
+    await mongoose.connection.collection<{ _id: string; at: Date }>('setuplocks').insertOne({ _id: 'owner', at: new Date() });
+    return true;
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) return false;
+    throw error;
+  }
+}
+
+async function releaseSetupLock() {
+  await mongoose.connection.collection<{ _id: string }>('setuplocks').deleteOne({ _id: 'owner' });
 }

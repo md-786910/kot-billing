@@ -63,8 +63,11 @@ export function clientIp(req: NextRequest): string {
   return req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip') || 'direct';
 }
 
+/** Trimmed string input, or '' when missing, not a string, or longer than `max` (never silently truncated). */
 export function str(value: unknown, max = 200): string {
-  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  return trimmed.length > max ? '' : trimmed;
 }
 
 export const PIN_PATTERN = /^\d{4,6}$/;
@@ -100,6 +103,7 @@ export function jsonError(error: string, status: number) {
 
 /** Log the real error server-side; never leak internals to the client. */
 export function serverError(error: unknown) {
+  if (error instanceof SyntaxError) return jsonError('Invalid request body', 400);
   console.error(error);
   return jsonError('Something went wrong. Please try again.', 500);
 }

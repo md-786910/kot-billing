@@ -52,7 +52,7 @@ interface BillingViewProps {
         creditRef?: string;
       }>;
     }
-  ) => void;
+  ) => Promise<boolean>;
   onPrintReceipt: (order: Order, booking?: PrivateBooking) => void;
 }
 
@@ -155,7 +155,8 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const upiId = settings.upiId || 'layali@okhdfcbank';
   const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(settings.loungeName)}&am=${balanceDue}&cu=INR`;
 
-  const handleSettle = () => {
+  // Confirmation toasts only appear once the server has accepted the settlement
+  const handleSettle = async () => {
     if (!currentOrder) return;
 
     if (isSplitMode) {
@@ -164,7 +165,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
         return;
       }
       const validTenders = splitRows.filter((r) => Number(r.amount) > 0);
-      onRecordPayment(
+      const saved = await onRecordPayment(
         currentOrder.id,
         {
           amount: validTenders[0]?.amount || 0,
@@ -178,6 +179,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
           payments: validTenders,
         }
       );
+      if (!saved) return;
 
       setSettleToast(
         `Split settlement of ${formatINR(splitTotal)} recorded for Table ${currentOrder.location}!`
@@ -195,7 +197,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
         return;
       }
 
-      onRecordPayment(
+      const saved = await onRecordPayment(
         currentOrder.id,
         {
           amount: amountToRecord,
@@ -208,6 +210,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
           taxPercent: activeTaxPercent,
         }
       );
+      if (!saved) return;
 
       setPaymentAmount('');
       setCashTendered('');

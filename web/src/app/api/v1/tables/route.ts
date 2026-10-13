@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { requireAuth, str } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { TableModel } from '@/models/Table';
@@ -26,7 +27,11 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
     const { id, name, status, currentOrderId } = body;
 
-    const query = id ? { _id: str(id, 40) } : { name: str(name, 60) };
+    const tableId = str(id, 40);
+    if (id !== undefined && !mongoose.isValidObjectId(tableId)) {
+      return NextResponse.json({ success: false, error: 'Table not found' }, { status: 404 });
+    }
+    const query = id !== undefined ? { _id: tableId } : { name: str(name, 60) };
     const updated = await TableModel.findOneAndUpdate(
       query,
       { $set: { ...(status && { status }), ...(currentOrderId !== undefined && { currentOrderId }) } },

@@ -9,12 +9,14 @@ import {
 // Username + password sign-in (owner / managers). Works from any browser, paired or not.
 export async function POST(req: NextRequest) {
   try {
-    if (!rateLimit(`login:${clientIp(req)}`)) return jsonError('Too many attempts. Please wait a few minutes.', 429);
-
     const body = await req.json();
     const username = str(body.username, 40).toLowerCase();
     const password = typeof body.password === 'string' ? body.password : '';
     if (!username || !password) return jsonError('Enter your username and password', 400);
+    // Per-username limit (accounts also lock after 5 failures) plus a global cap against spraying
+    if (!rateLimit(`login:${clientIp(req)}:${username}`) || !rateLimit('login:all', 100)) {
+      return jsonError('Too many attempts. Please wait a few minutes.', 429);
+    }
 
     const auth = await getAuth(req);
     const user = await UserModel.findOne({ username, isActive: true }).select('+passwordHash');

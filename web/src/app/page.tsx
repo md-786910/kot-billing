@@ -452,16 +452,18 @@ function POSApp() {
       let { status, json } = await send();
       if (status === 403 && json.error === 'Manager PIN required') {
         const pin = await auth.requestApproval('This discount is above the cashier limit');
-        if (!pin) return;
+        if (!pin) return false;
         ({ status, json } = await send(pin));
       }
       if (!json.success) {
         alert(json.error || 'Could not settle the bill');
-        return;
+        return false;
       }
       await refreshAllData();
+      return true;
     } catch {
       alert('Cannot reach the server. The bill was not saved.');
+      return false;
     }
   };
 
