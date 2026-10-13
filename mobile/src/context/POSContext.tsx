@@ -165,7 +165,7 @@ async function persistDeviceToken(token: string | null) {
 }
 
 const NOT_PAIRED_NOTICE = "This phone isn't paired with the server. Enter a new pairing code.";
-const CHANGE_SERVER_NOTICE = 'Enter the server address and a new pairing code from Admin → Devices.';
+const CHANGE_SERVER_NOTICE = 'Enter the server address and a new pairing code from Staff & Devices.';
 const BUSY_MESSAGE = 'Still working on the last action. Please wait.';
 
 type Notice = { text: string; /** connection/server trouble: cleared once the server answers again */ network: boolean };
@@ -475,7 +475,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (serverError) {
       return {
         success: false,
-        error: `Removed from this phone, but the server could not be reached (${serverError}). Revoke it in Admin → Devices.`,
+        error: `Removed from this phone, but the server could not be reached (${serverError}). Revoke it in Staff & Devices.`,
       };
     }
     return { success: true };

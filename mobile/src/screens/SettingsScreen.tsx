@@ -87,7 +87,7 @@ export const SettingsScreen: React.FC = () => {
     }
     Alert.alert(
       'Change server address?',
-      'This phone will be unpaired and signed out. You will need a new pairing code from Admin → Devices.',
+      'This phone will be unpaired and signed out. You will need a new pairing code from Staff & Devices.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer(next) },
@@ -98,7 +98,7 @@ export const SettingsScreen: React.FC = () => {
   const handleUnpair = () => {
     Alert.alert(
       'Unpair this phone?',
-      'Nobody can sign in on it until an admin creates a new pairing code in Admin → Devices.',
+      'Nobody can sign in on it until an admin creates a new pairing code in Staff & Devices.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

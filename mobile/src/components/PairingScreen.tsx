@@ -53,7 +53,7 @@ export const PairingScreen: React.FC = () => {
           </View>
           <Text style={styles.title}>Pair this phone</Text>
           <Text style={styles.subtitle}>
-            On the web app, open Admin → Devices, create a pairing code for a Mobile device, and enter it here.
+            On the web app, open Staff & Devices, choose Pair a device → Waiter phone, and enter it here.
           </Text>
 
           {authNotice ? <Text style={styles.notice}>{authNotice}</Text> : null}

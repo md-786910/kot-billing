@@ -69,7 +69,7 @@ export const TerminalLockScreen: React.FC = () => {
   const confirmChangeServer = () => {
     Alert.alert(
       'Change server address?',
-      'This phone will be unpaired. You will need a new pairing code from Admin → Devices.',
+      'This phone will be unpaired. You will need a new pairing code from Staff & Devices.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer() },
