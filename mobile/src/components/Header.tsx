@@ -9,14 +9,18 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenConfig }) => {
-  const { isConnected } = usePOS();
+  const { isConnected, currentStaff } = usePOS();
 
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <MaterialCommunityIcons name="fire" size={24} color={COLORS.gold} />
-        <Text style={styles.headerTitle}>LAYALI POS</Text>
-        <Text style={styles.headerSubtitle}>Waiter / Captain</Text>
+        <View>
+          <Text style={styles.headerTitle}>LAYALI POS</Text>
+          <Text style={styles.headerSubtitle}>
+            {currentStaff.name} • {currentStaff.role}
+          </Text>
+        </View>
       </View>
 
       <TouchableOpacity

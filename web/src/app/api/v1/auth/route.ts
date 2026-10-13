@@ -3,6 +3,16 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { UserModel } from '@/models/User';
 
 
+export async function GET() {
+  try {
+    await connectToDatabase();
+    const users = await UserModel.find({ isActive: true }, { pin: 0 }).sort({ role: 1, name: 1 }).lean();
+    return NextResponse.json({ success: true, data: users });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();

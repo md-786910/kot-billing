@@ -4,7 +4,7 @@ import { MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 
-export type TabKey = 'tables' | 'order' | 'kots' | 'shisha';
+export type TabKey = 'tables' | 'order' | 'kots' | 'shisha' | 'settings';
 
 interface BottomNavProps {
   activeTab: TabKey;
@@ -84,6 +84,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         />
         <Text style={[styles.navLabel, activeTab === 'shisha' && styles.navLabelActive]}>
           Shisha
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.navItem}
+        onPress={() => onTabChange('settings')}
+      >
+        <MaterialCommunityIcons
+          name="account-cog"
+          size={22}
+          color={activeTab === 'settings' ? COLORS.gold : COLORS.textMuted}
+        />
+        <Text style={[styles.navLabel, activeTab === 'settings' && styles.navLabelActive]}>
+          Settings
         </Text>
       </TouchableOpacity>
     </View>

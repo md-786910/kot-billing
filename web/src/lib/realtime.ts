@@ -10,6 +10,8 @@ export type RealtimeEventType =
   | 'SHISHA_TIMER_UPDATED'
   | 'BOOKING_CREATED'
   | 'BOOKING_CLOSED'
+  | 'TABLE_MERGED'
+  | 'TABLE_TRANSFERRED'
   | 'BILL_SETTLED';
 
 export interface RealtimeMessage {

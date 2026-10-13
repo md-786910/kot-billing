@@ -1,6 +1,6 @@
-import { TableItem, MenuItem, Order, KOT } from '../types';
+import { TableItem, MenuItem, Order, KOT, StaffUser } from '../types';
 
-let serverUrl = 'http://localhost:3001';
+let serverUrl = 'http://10.180.104.168:3001';
 
 export function setServerBaseUrl(url: string) {
   serverUrl = url.replace(/\/+$/, '');
@@ -203,3 +203,162 @@ export async function updateKOTStatus(
     return { success: false, error: err.message || 'Network error' };
   }
 }
+
+export async function fetchStaffUsers(): Promise<StaffUser[]> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/auth`);
+    const json = await res.json();
+    if (json.success && json.data) {
+      return json.data.map((u: any) => ({
+        id: u._id || u.id,
+        name: u.name,
+        role: u.role,
+        phone: u.phone,
+      }));
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function verifyStaffPin(pin: string): Promise<{ success: boolean; data?: StaffUser; error?: string }> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+    const json = await res.json();
+    return json;
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+export async function resetStaffPin(params: {
+  userId?: string;
+  staffName?: string;
+  currentPin?: string;
+  newPin: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/auth/reset-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const json = await res.json();
+    return json;
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+export async function pingServer(): Promise<{ success: boolean; latencyMs: number; message: string }> {
+  const start = Date.now();
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/init`, { method: 'GET' });
+    const latencyMs = Date.now() - start;
+    const json = await res.json();
+    return {
+      success: json.success,
+      latencyMs,
+      message: json.message || 'Connected',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      latencyMs: Date.now() - start,
+      message: err.message || 'Connection failed',
+    };
+  }
+}
+
+export async function settleOrderBill(params: {
+  orderId: string;
+  payment?: { amount: number; method: string; creditRef?: string };
+  payments?: { amount: number; method: string; creditRef?: string }[];
+  discount?: number;
+  discountType?: string;
+  discountReason?: string;
+  taxPercent?: number;
+  closeOrder?: boolean;
+}): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/billing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+export async function mergeTableOrders(params: {
+  sourceTable: string;
+  targetTable: string;
+  staff?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/orders/merge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+export async function voidWholeOrder(params: {
+  orderId: string;
+  table: string;
+  voidReason: string;
+  pin?: string;
+  staff?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/orders/void`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...params,
+        voidEntireOrder: true,
+      }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+export async function toggleMenuItemAvailability(
+  id: string,
+  isAvailable: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/menu`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, isAvailable }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+export async function fetchShiftSummary(): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const res = await fetch(`${serverUrl}/api/v1/shifts`);
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+

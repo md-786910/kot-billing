@@ -6,9 +6,13 @@ import { usePOS } from '../context/POSContext';
 
 interface TablesScreenProps {
   onSelectTableAndOrder: (tableName: string) => void;
+  onSelectTableAndBill?: (tableName: string) => void;
 }
 
-export const TablesScreen: React.FC<TablesScreenProps> = ({ onSelectTableAndOrder }) => {
+export const TablesScreen: React.FC<TablesScreenProps> = ({
+  onSelectTableAndOrder,
+  onSelectTableAndBill,
+}) => {
   const { tables, selectedFloor, setSelectedFloor } = usePOS();
 
   return (
@@ -40,6 +44,7 @@ export const TablesScreen: React.FC<TablesScreenProps> = ({ onSelectTableAndOrde
               key={table.id}
               table={table}
               onSelect={onSelectTableAndOrder}
+              onSettleBill={onSelectTableAndBill}
             />
           ))}
       </ScrollView>

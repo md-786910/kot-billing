@@ -1,6 +1,15 @@
 export type Station = 'Kitchen' | 'Beverage Counter' | 'Shisha Master';
 export type TableStatus = 'VACANT' | 'OCCUPIED' | 'BILL_PRINTED' | 'RESERVED';
 export type KOTStatus = 'NEW' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
+export type UserRole = 'ADMIN' | 'MANAGER' | 'CASHIER' | 'CAPTAIN' | 'KITCHEN_CHEF' | 'SHISHA_MASTER';
+
+export interface StaffUser {
+  id: string;
+  name: string;
+  role: UserRole;
+  phone?: string;
+  pin?: string;
+}
 
 export interface TableItem {
   id: string;

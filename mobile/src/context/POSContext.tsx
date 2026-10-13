@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { TableItem, MenuItem, CartItem, Order, KOT } from '../types';
+import { TableItem, MenuItem, CartItem, Order, KOT, StaffUser } from '../types';
 import {
   checkServerHealth,
   fetchTables,
@@ -11,17 +11,49 @@ import {
   transferTableOrder,
   voidOrderItem,
   updateKOTStatus,
+  fetchStaffUsers,
+  verifyStaffPin,
+  resetStaffPin,
+  pingServer,
+  settleOrderBill,
+  mergeTableOrders,
+  voidWholeOrder,
+  toggleMenuItemAvailability,
   getServerBaseUrl,
   setServerBaseUrl,
 } from '../services/api';
 
+const DEFAULT_STAFF: StaffUser = {
+  id: 'captain-1',
+  name: 'Captain 1',
+  role: 'CAPTAIN',
+  phone: '9876543212',
+};
+
+interface PingStats {
+  latencyMs: number;
+  message: string;
+  lastPing: string;
+}
+
 interface POSContextType {
-  // Connectivity
+  // Connectivity & Server
   isConnected: boolean;
   serverUrl: string;
   updateServerUrl: (url: string) => void;
   loading: boolean;
   refreshData: () => Promise<void>;
+  pingStats: PingStats | null;
+  runPingTest: () => Promise<void>;
+
+  // Staff User & Auth
+  currentStaff: StaffUser;
+  setCurrentStaff: (staff: StaffUser) => void;
+  staffUsers: StaffUser[];
+  isLocked: boolean;
+  lockTerminal: () => void;
+  unlockTerminal: (pin: string) => Promise<{ success: boolean; staff?: StaffUser; error?: string }>;
+  changePin: (currentPin: string, newPin: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 
   // Data
   tables: TableItem[];
@@ -58,6 +90,17 @@ interface POSContextType {
   transferTable: (fromTable: string, toTable: string, reason?: string) => Promise<{ success: boolean; error?: string }>;
   voidItem: (orderId: string, itemIndex: number, voidReason: string, pin?: string) => Promise<{ success: boolean; error?: string }>;
   updateKOT: (kotId: string, status: string) => Promise<void>;
+  settleBill: (params: {
+    orderId: string;
+    payment?: { amount: number; method: string; creditRef?: string };
+    payments?: { amount: number; method: string; creditRef?: string }[];
+    discount?: number;
+    discountReason?: string;
+    taxPercent?: number;
+  }) => Promise<{ success: boolean; error?: string }>;
+  mergeTables: (sourceTable: string, targetTable: string) => Promise<{ success: boolean; error?: string }>;
+  voidOrder: (orderId: string, table: string, voidReason: string, pin?: string) => Promise<{ success: boolean; error?: string }>;
+  toggle86: (itemId: string, isAvailable: boolean) => Promise<{ success: boolean; error?: string }>;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -66,7 +109,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isConnected, setIsConnected] = useState(false);
   const [serverUrl, setServerUrl] = useState(getServerBaseUrl());
   const [loading, setLoading] = useState(false);
+  const [pingStats, setPingStats] = useState<PingStats | null>(null);
 
+  // Staff State
+  const [currentStaff, setCurrentStaff] = useState<StaffUser>(DEFAULT_STAFF);
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [isLocked, setIsLocked] = useState(false);
+
+  // Restaurant Data
   const [tables, setTables] = useState<TableItem[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -81,23 +131,37 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setServerUrl(url);
   };
 
+  const runPingTest = useCallback(async () => {
+    const res = await pingServer();
+    setPingStats({
+      latencyMs: res.latencyMs,
+      message: res.message,
+      lastPing: new Date().toLocaleTimeString(),
+    });
+    setIsConnected(res.success);
+  }, []);
+
   const refreshData = useCallback(async () => {
     setLoading(true);
     try {
       const health = await checkServerHealth();
       setIsConnected(health.success);
 
-      const [tbls, items, ords, tickets] = await Promise.all([
+      const [tbls, items, ords, tickets, staffList] = await Promise.all([
         fetchTables(),
         fetchMenu(),
         fetchOrders(),
         fetchKOTs(),
+        fetchStaffUsers(),
       ]);
 
       setTables(tbls);
       setMenu(items);
       setOrders(ords);
       setKots(tickets);
+      if (staffList.length > 0) {
+        setStaffUsers(staffList);
+      }
     } catch {
       setIsConnected(false);
     } finally {
@@ -107,9 +171,43 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     refreshData();
+    runPingTest();
     const interval = setInterval(refreshData, 10000);
     return () => clearInterval(interval);
-  }, [refreshData]);
+  }, [refreshData, runPingTest]);
+
+  const lockTerminal = () => {
+    setIsLocked(true);
+  };
+
+  const unlockTerminal = async (pin: string): Promise<{ success: boolean; staff?: StaffUser; error?: string }> => {
+    const res = await verifyStaffPin(pin);
+    if (res.success && res.data) {
+      setCurrentStaff(res.data);
+      setIsLocked(false);
+      return { success: true, staff: res.data };
+    }
+    return { success: false, error: res.error || 'Invalid Staff PIN' };
+  };
+
+  const changePin = async (
+    currentPin: string,
+    newPin: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> => {
+    const res = await resetStaffPin({
+      userId: currentStaff.id,
+      staffName: currentStaff.name,
+      currentPin,
+      newPin,
+    });
+    if (res.success) {
+      // Refresh staff list
+      const staffList = await fetchStaffUsers();
+      if (staffList.length > 0) setStaffUsers(staffList);
+      return { success: true, message: res.message || 'PIN updated successfully' };
+    }
+    return { success: false, error: res.error || 'Failed to update PIN' };
+  };
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -169,7 +267,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tableName: selectedTable,
       guestName: params.guestName,
       guestPhone: params.guestPhone,
-      staffName: 'Captain 1',
+      staffName: currentStaff.name,
       items: cart.map((c) => ({
         name: c.name,
         price: c.price,
@@ -203,7 +301,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orderId: activeOrder.id,
       fromTable,
       toTable,
-      staff: 'Captain 1',
+      staff: currentStaff.name,
       reason,
     });
     setLoading(false);
@@ -222,7 +320,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       itemIndex,
       voidReason,
       pin,
-      staff: 'Captain 1',
+      staff: currentStaff.name,
     });
     setLoading(false);
     if (res.success) {
@@ -242,6 +340,71 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await refreshData();
   };
 
+  const settleBill = async (params: {
+    orderId: string;
+    payment?: { amount: number; method: string; creditRef?: string };
+    payments?: { amount: number; method: string; creditRef?: string }[];
+    discount?: number;
+    discountReason?: string;
+    taxPercent?: number;
+  }) => {
+    setLoading(true);
+    const res = await settleOrderBill({
+      ...params,
+      closeOrder: true,
+    });
+    setLoading(false);
+    if (res.success) {
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
+  const mergeTables = async (sourceTable: string, targetTable: string) => {
+    setLoading(true);
+    const res = await mergeTableOrders({
+      sourceTable,
+      targetTable,
+      staff: currentStaff.name,
+    });
+    setLoading(false);
+    if (res.success) {
+      setSelectedTable(targetTable);
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
+  const voidOrder = async (orderId: string, table: string, voidReason: string, pin?: string) => {
+    setLoading(true);
+    const res = await voidWholeOrder({
+      orderId,
+      table,
+      voidReason,
+      pin,
+      staff: currentStaff.name,
+    });
+    setLoading(false);
+    if (res.success) {
+      await refreshData();
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
+  const toggle86 = async (itemId: string, isAvailable: boolean) => {
+    const res = await toggleMenuItemAvailability(itemId, isAvailable);
+    if (res.success) {
+      setMenu((prev) =>
+        prev.map((m) => (m.id === itemId ? { ...m, isAvailable } : m))
+      );
+      return { success: true };
+    }
+    return { success: false, error: res.error };
+  };
+
   return (
     <POSContext.Provider
       value={{
@@ -250,6 +413,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateServerUrl,
         loading,
         refreshData,
+        pingStats,
+        runPingTest,
+        currentStaff,
+        setCurrentStaff,
+        staffUsers,
+        isLocked,
+        lockTerminal,
+        unlockTerminal,
+        changePin,
         tables,
         menu,
         orders,
@@ -272,6 +444,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         transferTable,
         voidItem,
         updateKOT,
+        settleBill,
+        mergeTables,
+        voidOrder,
+        toggle86,
       }}
     >
       {children}

@@ -9,15 +9,18 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5, Feather } from '@expo/vector-icons';
 import { MenuItemCard } from '../components/MenuItemCard';
 import { StickyCartBar } from '../components/StickyCartBar';
 import { ReviewKOTModal } from '../components/ReviewKOTModal';
 import { TableTransferModal } from '../components/TableTransferModal';
+import { TableMergeModal } from '../components/TableMergeModal';
+import { VoidOrderModal } from '../components/VoidOrderModal';
 import { ItemVoidModal } from '../components/ItemVoidModal';
+import { MobileBillingModal } from '../components/MobileBillingModal';
 import { COLORS } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
-import { OrderItem } from '../types';
+import { OrderItem, MenuItem } from '../types';
 
 interface OrderScreenProps {
   onOrderSuccess: () => void;
@@ -28,6 +31,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
     menu,
     categories,
     selectedTable,
+    setSelectedTable,
     activeOrder,
     cart,
     addToCart,
@@ -35,18 +39,23 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
     cartCount,
     cartTotal,
     refreshData,
+    toggle86,
   } = usePOS();
 
   // Mode: Menu vs Running Items
   const [activeTab, setActiveTab] = useState<'menu' | 'running'>('menu');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [is86ManagerMode, setIs86ManagerMode] = useState<boolean>(false);
 
   // Modals
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
   const [showTransferModal, setShowTransferModal] = useState<boolean>(false);
+  const [showMergeModal, setShowMergeModal] = useState<boolean>(false);
+  const [showCancelOrderModal, setShowCancelOrderModal] = useState<boolean>(false);
+  const [showBillingModal, setShowBillingModal] = useState<boolean>(false);
 
-  // Void modal state
+  // Void item modal state
   const [showVoidModal, setShowVoidModal] = useState<boolean>(false);
   const [selectedVoidItemIndex, setSelectedVoidItemIndex] = useState<number | null>(null);
   const [selectedVoidItem, setSelectedVoidItem] = useState<OrderItem | null>(null);
@@ -69,36 +78,80 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
       .reduce((s, it) => s + it.price * it.qty, 0);
   }, [activeOrder]);
 
+  const handleToggle86Item = async (item: MenuItem) => {
+    const nextAvailability = !item.isAvailable;
+    const res = await toggle86(item.id, nextAvailability);
+    if (res.success) {
+      Alert.alert(
+        nextAvailability ? 'Restored In Stock' : '86 OUT OF STOCK',
+        `${item.name} is now ${nextAvailability ? 'AVAILABLE' : '86 OUT OF STOCK'}.`
+      );
+    } else {
+      Alert.alert('Update Failed', res.error || 'Failed to update stock status.');
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Table Banner & Active Order Overview */}
+      {/* 1. TABLE BANNER & QUICK ACTIONS */}
       <View style={styles.orderHeaderBar}>
         <View style={{ flex: 1 }}>
           <Text style={styles.orderTableLabel}>Selected Table</Text>
           <Text style={styles.orderTableName}>{selectedTable}</Text>
           {activeOrder ? (
             <Text style={styles.runningOrderText}>
-              Running: ₹{runningTotal.toFixed(2)} (#{activeOrder.orderNumber || activeOrder.id})
+              Running: ₹{runningTotal.toFixed(2)} (#{activeOrder.orderNumber || activeOrder.id.slice(-6).toUpperCase()})
             </Text>
           ) : (
-            <Text style={styles.vacantTableText}>Vacant Table (New Guest)</Text>
+            <Text style={styles.vacantTableText}>● Vacant Table (Ready for Guests)</Text>
           )}
         </View>
 
-        {/* Quick Shift Button if table is occupied */}
+        {/* Action Buttons if table is occupied */}
         {activeOrder ? (
-          <TouchableOpacity
-            style={styles.shiftTableBtn}
-            onPress={() => setShowTransferModal(true)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="swap-horizontal" size={14} color={COLORS.gold} />
-            <Text style={styles.shiftTableBtnText}>Shift Table</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActionsColumn}>
+            <TouchableOpacity
+              style={styles.settleBtnHeader}
+              onPress={() => setShowBillingModal(true)}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="receipt" size={14} color="#ffffff" />
+              <Text style={styles.settleBtnHeaderText}>Settle Bill</Text>
+            </TouchableOpacity>
+
+            <View style={styles.subActionsRow}>
+              <TouchableOpacity
+                style={styles.actionBtnSmall}
+                onPress={() => setShowTransferModal(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="swap-horizontal" size={12} color={COLORS.gold} />
+                <Text style={styles.actionBtnSmallText}>Shift</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionBtnSmall, { borderColor: '#818cf8' }]}
+                onPress={() => setShowMergeModal(true)}
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons name="call-merge" size={12} color="#818cf8" />
+                <Text style={[styles.actionBtnSmallText, { color: '#818cf8' }]}>Merge</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionBtnSmall, { borderColor: '#ef4444' }]}
+                onPress={() => setShowCancelOrderModal(true)}
+                activeOpacity={0.8}
+              >
+                <Feather name="x-circle" size={12} color="#ef4444" />
+                <Text style={[styles.actionBtnSmallText, { color: '#ef4444' }]}>Void</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         ) : null}
       </View>
 
-      {/* Segmented Switch (If occupied) */}
+      {/* 2. SEGMENTED SWITCH: Menu Catalog vs Running Items */}
       {activeOrder && activeOrder.items.length > 0 ? (
         <View style={styles.tabSwitchRow}>
           <TouchableOpacity
@@ -127,8 +180,8 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         </View>
       ) : null}
 
+      {/* 3. RUNNING ITEMS TAB */}
       {activeTab === 'running' && activeOrder ? (
-        /* Running Items List with VOID Action */
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <View style={styles.runningListContainer}>
             {activeOrder.items.map((it, idx) => (
@@ -161,7 +214,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                     }}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.voidBtnText}>Void</Text>
+                    <Text style={styles.voidBtnText}>Void Item</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.voidBadge}>
@@ -170,26 +223,58 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                 )}
               </View>
             ))}
+
+            {/* Quick Settle footer in running items */}
+            <TouchableOpacity
+              style={styles.fullSettleBar}
+              onPress={() => setShowBillingModal(true)}
+            >
+              <MaterialCommunityIcons name="receipt" size={18} color="#ffffff" />
+              <Text style={styles.fullSettleBarText}>
+                Settle & Print Receipt • Total: ₹{runningTotal.toFixed(2)}
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       ) : (
-        /* Menu Catalog View */
+        /* 4. MENU CATALOG VIEW */
         <View style={{ flex: 1 }}>
-          {/* Search Bar */}
-          <View style={styles.searchRow}>
-            <Ionicons name="search" size={16} color={COLORS.textMuted} style={{ marginRight: 6 }} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search items, drinks, shisha..."
-              placeholderTextColor={COLORS.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery ? (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={16} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            ) : null}
+          {/* Search Bar + 86 Manager Mode Toggle */}
+          <View style={styles.searchAnd86Row}>
+            <View style={styles.searchRow}>
+              <Ionicons name="search" size={16} color={COLORS.textMuted} style={{ marginRight: 6 }} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search food, drinks, shisha..."
+                placeholderTextColor={COLORS.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery ? (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.btn86Mode, is86ManagerMode && styles.btn86ModeActive]}
+              onPress={() => setIs86ManagerMode((prev) => !prev)}
+            >
+              <MaterialCommunityIcons
+                name="store-cog"
+                size={16}
+                color={is86ManagerMode ? '#ffffff' : COLORS.textMuted}
+              />
+              <Text
+                style={[
+                  styles.btn86ModeText,
+                  is86ManagerMode && styles.btn86ModeTextActive,
+                ]}
+              >
+                {is86ManagerMode ? '86 Mode ON' : '86 Mode'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Category Pills */}
@@ -232,6 +317,8 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                   cartItem={cartItem}
                   onAdd={addToCart}
                   onUpdateQty={updateCartQty}
+                  is86ManagerMode={is86ManagerMode}
+                  onToggle86={handleToggle86Item}
                 />
               );
             }}
@@ -239,14 +326,15 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         </View>
       )}
 
-      {/* Floating Cart Bar (Always accessible when items are selected) */}
+      {/* 5. FLOATING CART BAR */}
       <StickyCartBar
         count={cartCount}
         total={cartTotal}
         onReview={() => setShowReviewModal(true)}
       />
 
-      {/* Review Modal */}
+      {/* 6. MODALS */}
+      {/* Review & Punch KOT Modal */}
       <ReviewKOTModal
         visible={showReviewModal}
         onClose={() => setShowReviewModal(false)}
@@ -265,6 +353,31 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
           orderNumber={activeOrder.orderNumber || activeOrder.id}
           onSuccess={() => {
             setShowTransferModal(false);
+            refreshData();
+          }}
+        />
+      )}
+
+      {/* Table Merge Modal */}
+      <TableMergeModal
+        visible={showMergeModal}
+        onClose={() => setShowMergeModal(false)}
+        onSuccess={(newTable) => {
+          setShowMergeModal(false);
+          setSelectedTable(newTable);
+          refreshData();
+        }}
+      />
+
+      {/* Void Entire Order Modal */}
+      {activeOrder && (
+        <VoidOrderModal
+          visible={showCancelOrderModal}
+          orderId={activeOrder.id}
+          tableName={selectedTable}
+          onClose={() => setShowCancelOrderModal(false)}
+          onSuccess={() => {
+            setShowCancelOrderModal(false);
             refreshData();
           }}
         />
@@ -290,6 +403,17 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
           }}
         />
       )}
+
+      {/* Mobile Billing & Checkout Modal */}
+      <MobileBillingModal
+        visible={showBillingModal}
+        order={activeOrder || null}
+        onClose={() => setShowBillingModal(false)}
+        onSettledSuccess={() => {
+          setShowBillingModal(false);
+          refreshData();
+        }}
+      />
     </View>
   );
 };
@@ -305,7 +429,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.bgCard,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
@@ -333,34 +457,56 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
-  shiftTableBtn: {
+  headerActionsColumn: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  settleBtnHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    backgroundColor: COLORS.kitchen,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  settleBtnHeaderText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  subActionsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionBtnSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     backgroundColor: COLORS.bgSurface,
     borderWidth: 1,
     borderColor: 'rgba(212, 175, 55, 0.4)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  shiftTableBtnText: {
+  actionBtnSmallText: {
     color: COLORS.gold,
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '700',
   },
   tabSwitchRow: {
     flexDirection: 'row',
     backgroundColor: COLORS.bgCard,
     borderRadius: 10,
     padding: 3,
-    marginBottom: 8,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: COLORS.borderDefault,
+    borderColor: COLORS.borderSubtle,
   },
   tabSwitchBtn: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 8,
     alignItems: 'center',
     borderRadius: 8,
   },
@@ -368,40 +514,41 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   tabSwitchText: {
-    color: COLORS.textMuted,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
+    color: COLORS.textMuted,
   },
   tabSwitchTextActive: {
     color: '#ffffff',
+    fontWeight: '700',
   },
   runningListContainer: {
     gap: 8,
-    paddingBottom: 85,
+    paddingBottom: 24,
   },
   runningItemRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: COLORS.bgCard,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.borderDefault,
+    borderColor: COLORS.borderSubtle,
   },
   runningItemRowVoided: {
-    opacity: 0.6,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    backgroundColor: '#161314',
+    opacity: 0.4,
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
   runningItemName: {
-    color: '#ffffff',
-    fontSize: 14,
+    color: COLORS.textPrimary,
+    fontSize: 13,
     fontWeight: '700',
   },
   runningItemNameVoided: {
     textDecorationLine: 'line-through',
-    color: '#f87171',
+    color: '#ef4444',
   },
   runningItemMeta: {
     color: COLORS.textMuted,
@@ -410,56 +557,99 @@ const styles = StyleSheet.create({
   },
   voidBtn: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#ef4444',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   voidBtnText: {
-    color: '#f87171',
+    color: '#ef4444',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   voidBadge: {
-    backgroundColor: '#262626',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
   },
   voidBadgeText: {
-    color: '#888888',
-    fontSize: 10,
+    color: '#ef4444',
+    fontSize: 9,
     fontWeight: '800',
   },
+  fullSettleBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.kitchen,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  fullSettleBarText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  searchAnd86Row: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
   searchRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.bgCard,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
     borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
-    marginBottom: 8,
   },
   searchInput: {
     flex: 1,
+    color: COLORS.textPrimary,
+    fontSize: 12,
+    padding: 0,
+  },
+  btn86Mode: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.bgSurface,
+    borderWidth: 1,
+    borderColor: COLORS.borderDefault,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  btn86ModeActive: {
+    backgroundColor: '#9f1119',
+    borderColor: '#ef4444',
+  },
+  btn86ModeText: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  btn86ModeTextActive: {
     color: '#ffffff',
-    fontSize: 13,
   },
   categoryScroll: {
     maxHeight: 38,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   categoryPill: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 14,
-    backgroundColor: COLORS.bgCard,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
+    backgroundColor: COLORS.bgSurface,
     marginRight: 6,
+    borderWidth: 1,
+    borderColor: COLORS.borderSubtle,
   },
   categoryPillActive: {
     backgroundColor: COLORS.primary,
@@ -467,13 +657,15 @@ const styles = StyleSheet.create({
   },
   categoryPillText: {
     color: COLORS.textMuted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   categoryPillTextActive: {
     color: '#ffffff',
+    fontWeight: '700',
   },
   menuList: {
-    paddingBottom: 85,
+    gap: 8,
+    paddingBottom: 70,
   },
 });

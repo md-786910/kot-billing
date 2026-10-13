@@ -28,6 +28,7 @@ import {
   Sparkles,
   Zap,
   ArrowRightLeft,
+  GitMerge,
   ShieldAlert,
   AlertTriangle,
   X,
@@ -121,6 +122,17 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
   const [transferReason, setTransferReason] = useState<string>('Guest request');
   const [isTransferring, setIsTransferring] = useState<boolean>(false);
 
+  // Table Merge Modal
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [mergeTargetTable, setMergeTargetTable] = useState<string>('');
+  const [isMerging, setIsMerging] = useState<boolean>(false);
+
+  // Void Entire Order / Emergency Walkout Modal
+  const [isVoidOrderModalOpen, setIsVoidOrderModalOpen] = useState(false);
+  const [voidOrderReason, setVoidOrderReason] = useState<string>('Guest Walkout / Emergency');
+  const [voidOrderPin, setVoidOrderPin] = useState<string>('');
+  const [isVoidingEntireOrder, setIsVoidingEntireOrder] = useState<boolean>(false);
+
   // Void Item Modal
   const [isVoidModalOpen, setIsVoidModalOpen] = useState(false);
   const [selectedVoidItemIndex, setSelectedVoidItemIndex] = useState<number | null>(null);
@@ -145,6 +157,11 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
   // Vacant tables available for transfer
   const vacantTables = useMemo(() => {
     return tables.filter((t) => !activeOrdersMap.has(t.name) && t.name !== currentLocation);
+  }, [tables, activeOrdersMap, currentLocation]);
+
+  // Occupied tables available for merging
+  const occupiedMergeTables = useMemo(() => {
+    return tables.filter((t) => activeOrdersMap.has(t.name) && t.name !== currentLocation);
   }, [tables, activeOrdersMap, currentLocation]);
 
   // Categories list
@@ -303,6 +320,76 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
       alert(err.message || 'Error executing table transfer');
     } finally {
       setIsTransferring(false);
+    }
+  };
+
+  // Table merge executor
+  const handleExecuteMerge = async () => {
+    if (!currentActiveOrder || !mergeTargetTable) return;
+    setIsMerging(true);
+    try {
+      const res = await fetch('/api/v1/orders/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceTable: currentLocation,
+          targetTable: mergeTargetTable,
+          staff,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSuccessToast(`Table ${currentLocation} successfully merged into ${mergeTargetTable}!`);
+        setIsMergeModalOpen(false);
+        onSelectLocation(mergeTargetTable);
+        if (onRefresh) onRefresh();
+        setTimeout(() => setSuccessToast(null), 4000);
+      } else {
+        alert(json.error || 'Failed to merge tables');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error executing table merge');
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
+  // Void entire order executor
+  const handleExecuteVoidEntireOrder = async () => {
+    if (!currentActiveOrder) return;
+    if (!voidOrderReason.trim()) {
+      alert('Please enter a cancellation reason.');
+      return;
+    }
+    setIsVoidingEntireOrder(true);
+    try {
+      const res = await fetch('/api/v1/orders/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: currentActiveOrder.id,
+          table: currentLocation,
+          voidEntireOrder: true,
+          voidReason: voidOrderReason.trim(),
+          pin: voidOrderPin.trim() || undefined,
+          staff,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSuccessToast(`Order for Table ${currentLocation} has been voided and table released.`);
+        setIsVoidOrderModalOpen(false);
+        setVoidOrderReason('Guest Walkout / Emergency');
+        setVoidOrderPin('');
+        if (onRefresh) onRefresh();
+        setTimeout(() => setSuccessToast(null), 4000);
+      } else {
+        alert(json.error || 'Failed to void order');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error voiding order');
+    } finally {
+      setIsVoidingEntireOrder(false);
     }
   };
 
@@ -688,10 +775,31 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
                 setTargetTable(vacantTables[0]?.name || '');
                 setIsTransferModalOpen(true);
               }}
-              className="px-3.5 py-2 bg-[#25293c] hover:bg-[#323750] text-amber-300 hover:text-white border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95"
+              className="px-3 py-2 bg-[#25293c] hover:bg-[#323750] text-amber-300 hover:text-white border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95"
             >
               <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" />
-              <span>Shift / Transfer Table</span>
+              <span>Shift Table</span>
+            </button>
+
+            {/* Merge Table Button */}
+            <button
+              onClick={() => {
+                setMergeTargetTable(occupiedMergeTables[0]?.name || '');
+                setIsMergeModalOpen(true);
+              }}
+              className="px-3 py-2 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95"
+            >
+              <GitMerge className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Merge Table</span>
+            </button>
+
+            {/* Cancel Order / Walkout Button */}
+            <button
+              onClick={() => setIsVoidOrderModalOpen(true)}
+              className="px-3 py-2 bg-rose-950/60 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-600/40 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-md active:scale-95"
+            >
+              <Ban className="w-3.5 h-3.5 text-rose-400" />
+              <span>Void Order / Walkout</span>
             </button>
 
             {/* Quick Settle Bill Button */}
@@ -1271,6 +1379,159 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
                 className="px-4 py-2 bg-[#9f1119] hover:bg-[#b91c1c] text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
               >
                 {isTransferring ? 'Transferring...' : 'Confirm Table Shift'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TABLE MERGE MODAL */}
+      {isMergeModalOpen && currentActiveOrder && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-[#141622] border border-indigo-500/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <GitMerge className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Merge Tables & Combine Bills</h3>
+              </div>
+              <button
+                onClick={() => setIsMergeModalOpen(false)}
+                className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-400">
+              Transfer all active items, payments, and open KOTs from <strong className="text-white">{currentLocation}</strong> into another occupied table. <strong className="text-amber-400">{currentLocation}</strong> will be vacated.
+            </p>
+
+            <div className="p-3 bg-neutral-900 border border-neutral-800 rounded-xl space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Source Table (Closing):</span>
+                <span className="font-extrabold text-white">{currentLocation}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Items to Merge:</span>
+                <span className="font-bold text-indigo-300">{currentActiveOrder.items.length} Items</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Amount to Transfer:</span>
+                <span className="font-mono font-bold text-emerald-400">{formatINR(runningSubtotal)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                Merge Into Occupied Target Table:
+              </label>
+              {occupiedMergeTables.length === 0 ? (
+                <div className="p-3 bg-neutral-900 border border-neutral-800 rounded-xl text-neutral-400 text-xs text-center">
+                  No other occupied tables currently running!
+                </div>
+              ) : (
+                <select
+                  value={mergeTargetTable}
+                  onChange={(e) => setMergeTargetTable(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-[#1b1e2a] border border-neutral-700 rounded-xl text-white font-bold text-xs focus:outline-none focus:border-indigo-400"
+                >
+                  {occupiedMergeTables.map((t) => (
+                    <option key={t.id || t.name} value={t.name}>
+                      {t.name} ({t.floor})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsMergeModalOpen(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isMerging || occupiedMergeTables.length === 0}
+                onClick={handleExecuteMerge}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+              >
+                {isMerging ? 'Merging...' : 'Confirm Table Merge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VOID ENTIRE ORDER / EMERGENCY WALKOUT MODAL */}
+      {isVoidOrderModalOpen && currentActiveOrder && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-[#141622] border border-rose-500/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Ban className="w-5 h-5 text-rose-500" />
+                <h3 className="text-base font-bold text-white">Cancel Order / Emergency Walkout</h3>
+              </div>
+              <button
+                onClick={() => setIsVoidOrderModalOpen(false)}
+                className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-rose-950/30 border border-rose-800/40 rounded-xl text-xs text-rose-200">
+              ⚠️ <strong>Warning:</strong> This will cancel all active kitchen/bar/shisha KOTs for Table <strong>{currentLocation}</strong>, mark the order VOIDED with an audit record, and immediately release the table to <strong>VACANT</strong>.
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                Cancellation Reason:
+              </label>
+              <select
+                value={voidOrderReason}
+                onChange={(e) => setVoidOrderReason(e.target.value)}
+                className="w-full px-3 py-2.5 bg-[#1b1e2a] border border-neutral-700 rounded-xl text-white text-xs focus:outline-none focus:border-rose-400"
+              >
+                <option value="Guest Walkout / Emergency">Guest Walkout / Left without notice</option>
+                <option value="Accidental Order Creation">Accidental Order Creation</option>
+                <option value="Customer Dissatisfaction / Food Returned">Customer Dissatisfaction / Returned</option>
+                <option value="VIP Space Booking Cancelled">VIP Space Booking Cancelled</option>
+                <option value="Manager Special Void">Manager Special Void</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                Manager / Supervisor PIN:
+              </label>
+              <input
+                type="password"
+                maxLength={4}
+                value={voidOrderPin}
+                onChange={(e) => setVoidOrderPin(e.target.value)}
+                placeholder="4-digit PIN (e.g. 1111)"
+                className="w-full px-3 py-2 bg-[#1b1e2a] border border-neutral-700 rounded-xl text-white text-xs tracking-widest font-mono text-center focus:outline-none focus:border-rose-400"
+              />
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsVoidOrderModalOpen(false)}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Keep Order Active
+              </button>
+              <button
+                type="button"
+                disabled={isVoidingEntireOrder}
+                onClick={handleExecuteVoidEntireOrder}
+                className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+              >
+                {isVoidingEntireOrder ? 'Voiding...' : 'Confirm Full Void'}
               </button>
             </div>
           </div>

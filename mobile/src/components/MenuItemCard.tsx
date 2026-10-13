@@ -8,6 +8,8 @@ interface MenuItemCardProps {
   cartItem?: CartItem;
   onAdd: (item: MenuItem) => void;
   onUpdateQty: (id: string, delta: number) => void;
+  is86ManagerMode?: boolean;
+  onToggle86?: (item: MenuItem) => void;
 }
 
 export const MenuItemCard: React.FC<MenuItemCardProps> = ({
@@ -15,6 +17,8 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
   cartItem,
   onAdd,
   onUpdateQty,
+  is86ManagerMode,
+  onToggle86,
 }) => {
   const is86 = !item.isAvailable;
 
@@ -46,7 +50,20 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({
         </View>
       </View>
 
-      {is86 ? (
+      {is86ManagerMode ? (
+        <TouchableOpacity
+          style={[
+            styles.addBtn,
+            is86
+              ? { backgroundColor: '#10b981', borderColor: '#059669' }
+              : { backgroundColor: '#ef4444', borderColor: '#dc2626' },
+          ]}
+          onPress={() => onToggle86?.(item)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.addBtnText}>{is86 ? 'RESTORE' : "86 OUT"}</Text>
+        </TouchableOpacity>
+      ) : is86 ? (
         <View style={styles.btn86Disabled}>
           <Text style={styles.btn86Text}>86'd</Text>
         </View>

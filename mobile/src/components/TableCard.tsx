@@ -6,9 +6,10 @@ import { COLORS } from '../constants/theme';
 interface TableCardProps {
   table: TableItem;
   onSelect: (tableName: string) => void;
+  onSettleBill?: (tableName: string) => void;
 }
 
-export const TableCard: React.FC<TableCardProps> = ({ table, onSelect }) => {
+export const TableCard: React.FC<TableCardProps> = ({ table, onSelect, onSettleBill }) => {
   const isOccupied = table.status === 'OCCUPIED';
   const isBillPrinted = table.status === 'BILL_PRINTED';
 
@@ -43,7 +44,20 @@ export const TableCard: React.FC<TableCardProps> = ({ table, onSelect }) => {
       <Text style={styles.tableFloor}>{table.floor}</Text>
       <View style={styles.tableFooter}>
         <Text style={styles.tableCapacity}>Cap: {table.capacity}</Text>
-        <Text style={styles.orderShortcut}>+ Take Order</Text>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {isOccupied && onSettleBill && (
+            <TouchableOpacity
+              style={styles.settleShortcutBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onSettleBill(table.name);
+              }}
+            >
+              <Text style={styles.settleShortcutText}>₹ Bill</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={styles.orderShortcut}>{isOccupied ? '+ Add' : '+ Order'}</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -117,5 +131,18 @@ const styles = StyleSheet.create({
     color: COLORS.gold,
     fontSize: 11,
     fontWeight: '700',
+  },
+  settleShortcutBtn: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  settleShortcutText: {
+    color: '#34d399',
+    fontSize: 10,
+    fontWeight: '800',
   },
 });
