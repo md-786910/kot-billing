@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { audit, authorizeOrApprove, requireAuth } from '@/lib/auth';
+import { CASHIER_DISCOUNT_LIMIT_PERCENT } from '@/lib/auth/permissions';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
@@ -8,6 +10,9 @@ import { PrivateBookingModel } from '@/models/PrivateBooking';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
 export async function POST(req: NextRequest) {
+  const guard = await requireAuth(req, 'bill.settle');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -33,8 +38,24 @@ export async function POST(req: NextRequest) {
     if (!order) {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
     }
+    if (order.closed) {
+      return NextResponse.json({ success: false, error: 'This bill is already settled' }, { status: 409 });
+    }
 
-    if (discount !== undefined) order.discountAmount = Number(discount);
+    // Discounts above the cashier limit need a manager (or a manager's PIN)
+    const subtotal = order.items.filter((it) => !it.isVoided).reduce((sum, it) => sum + it.price * it.qty, 0);
+    const discountValue = Math.max(0, Number(discount) || 0);
+    if (discountValue > subtotal) {
+      return NextResponse.json({ success: false, error: 'Discount cannot exceed the bill' }, { status: 400 });
+    }
+    let approvedBy = '';
+    if (discountValue > (subtotal * CASHIER_DISCOUNT_LIMIT_PERCENT) / 100) {
+      const approval = await authorizeOrApprove(req, auth, 'bill.discount.unlimited', body.approvalPin);
+      if (!approval.ok) return approval.response;
+      approvedBy = approval.approvedBy;
+    }
+
+    if (discount !== undefined) order.discountAmount = discountValue;
     if (discountType !== undefined) order.discountType = discountType;
     if (discountPercent !== undefined) order.discountPercent = Number(discountPercent);
     if (discountReason !== undefined) order.discountReason = discountReason;
@@ -93,6 +114,11 @@ export async function POST(req: NextRequest) {
     }
 
     await order.save();
+    await audit(auth, closeOrder ? 'bill.settled' : 'bill.payment', order.orderNumber, {
+      discount: discountValue,
+      discountReason,
+      payments: order.payments.length,
+    }, approvedBy);
 
     broadcastRealtimeEvent('BILL_SETTLED', order.toObject());
 

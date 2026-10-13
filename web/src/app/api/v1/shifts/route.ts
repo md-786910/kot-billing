@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { ShiftRegisterModel } from '@/models/ShiftRegister';
 import { OrderModel } from '@/models/Order';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req, 'shift.manage');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     // Find active open shift
@@ -73,13 +77,17 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireAuth(req, 'shift.manage');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
     const action = body.action?.toLowerCase();
 
     if (action === 'open') {
-      const { openedBy = 'Cashier 1', openingFloat = 2000, notes = '' } = body;
+      const { openingFloat = 2000, notes = '' } = body;
+      const openedBy = auth.actorName;
 
       const existingOpen = await ShiftRegisterModel.findOne({ status: 'OPEN' });
       if (existingOpen) {
@@ -106,7 +114,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'drop' || action === 'cash_drop') {
-      const { amount, reason, staff = 'Cashier 1' } = body;
+      const { amount, reason } = body;
+      const staff = auth.actorName;
       const activeShift = await ShiftRegisterModel.findOne({ status: 'OPEN' });
       if (!activeShift) {
         return NextResponse.json({ success: false, error: 'No active shift found.' }, { status: 404 });
@@ -124,7 +133,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'close') {
-      const { closingCashActual, actualCash: reqActualCash, closedBy = 'Manager', notes = '' } = body;
+      const { closingCashActual, actualCash: reqActualCash, notes = '' } = body;
+      const closedBy = auth.actorName;
       const actualCash = Number(closingCashActual ?? reqActualCash ?? 0);
       const activeShift = await ShiftRegisterModel.findOne({ status: 'OPEN' });
       if (!activeShift) {

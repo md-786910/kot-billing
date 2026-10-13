@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { audit, authorizeOrApprove, requireAuth } from '@/lib/auth';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
 import { KOTModel } from '@/models/KOT';
-import { UserModel } from '@/models/User';
 import { TableModel } from '@/models/Table';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
@@ -21,10 +21,13 @@ async function getNextVoidKotSequence(): Promise<number> {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireAuth(req, 'order.create');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
-    const { orderId, itemIndex, voidQty, voidEntireOrder = false, voidReason, pin, staff = 'Manager' } = body;
+    const { orderId, itemIndex, voidQty, voidEntireOrder = false, voidReason, pin } = body;
 
     if (!orderId || !voidReason) {
       return NextResponse.json(
@@ -40,20 +43,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Require supervisor PIN authorization if PIN is supplied
-    if (pin) {
-      const authorizedUser = await UserModel.findOne({
-        pin,
-        role: { $in: ['ADMIN', 'MANAGER'] },
-        isActive: true,
-      });
-      if (!authorizedUser) {
-        return NextResponse.json(
-          { success: false, error: 'Invalid Supervisor PIN. Void action rejected.' },
-          { status: 403 }
-        );
-      }
-    }
+    // Voids need a manager, or a manager's PIN entered on this device
+    const approval = await authorizeOrApprove(req, auth, 'order.void', pin);
+    if (!approval.ok) return approval.response;
+    const staff = approval.approvedBy ? `${auth.actorName} (approved by ${approval.approvedBy})` : auth.actorName;
 
     let order = null;
     if (mongoose.isValidObjectId(orderId)) {
@@ -65,6 +58,12 @@ export async function POST(req: NextRequest) {
     if (!order) {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
     }
+    if (order.closed) {
+      return NextResponse.json({ success: false, error: 'This bill is already closed' }, { status: 409 });
+    }
+    await audit(auth, voidEntireOrder ? 'order.voided' : 'order.item_voided', order.orderNumber, {
+      itemIndex, voidQty, voidReason: String(voidReason),
+    }, approval.approvedBy);
 
     // 1. Full Table / Entire Order Cancellation
     if (voidEntireOrder) {

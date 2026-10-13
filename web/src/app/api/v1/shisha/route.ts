@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { KOTModel } from '@/models/KOT';
 import { OrderModel } from '@/models/Order';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req, 'data.read');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const shishaKots = await KOTModel.find({ station: 'Shisha Master' })
@@ -19,6 +23,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireAuth(req, 'shisha.manage');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();

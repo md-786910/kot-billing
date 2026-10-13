@@ -98,14 +98,6 @@ export const INITIAL_MENU = [
   { name: 'Mix Sauce Pasta', price: 99, station: 'Kitchen', category: 'Pasta', isAvailable: true, prepTimeMin: 15 },
 ];
 
-export const INITIAL_STAFF = [
-  { name: 'Manager / Admin', pin: '1111', role: 'ADMIN', phone: '9876543210' },
-  { name: 'Cashier Desk', pin: '2222', role: 'CASHIER', phone: '9876543211' },
-  { name: 'Captain 1', pin: '3333', role: 'CAPTAIN', phone: '9876543212' },
-  { name: 'Kitchen Chef', pin: '4444', role: 'KITCHEN_CHEF', phone: '9876543213' },
-  { name: 'Shisha Master', pin: '5555', role: 'SHISHA_MASTER', phone: '9876543214' },
-];
-
 export async function seedDatabaseIfEmpty() {
   const tableCount = await TableModel.countDocuments();
   if (tableCount === 0) {
@@ -132,10 +124,8 @@ export async function seedDatabaseIfEmpty() {
     });
   }
 
-  const staffCount = await UserModel.countDocuments();
-  if (staffCount === 0) {
-    await UserModel.insertMany(INITIAL_STAFF);
-  }
+  // Staff are created by the owner after first-run setup; hash any PINs stored by older builds
+  await migrateLegacyPins();
 
   // Seed sample initial active order if no orders exist
   const orderCount = await OrderModel.countDocuments();

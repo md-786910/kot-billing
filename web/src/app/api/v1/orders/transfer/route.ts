@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
@@ -7,10 +8,14 @@ import { KOTModel } from '@/models/KOT';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
 export async function POST(req: NextRequest) {
+  const guard = await requireAuth(req, 'table.move');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
-    const { orderId, fromTable, toTable, staff = 'Captain 1' } = body;
+    const { orderId, fromTable, toTable } = body;
+    const staff = auth.actorName;
 
     if (!orderId || !fromTable || !toTable) {
       return NextResponse.json(

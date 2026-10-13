@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth, str } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { TableModel } from '@/models/Table';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req, 'data.read');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     // Fast lean query with projection
@@ -16,12 +20,15 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const guard = await requireAuth(req, 'table.update');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
     const { id, name, status, currentOrderId } = body;
 
-    const query = id ? { _id: id } : { name };
+    const query = id ? { _id: str(id, 40) } : { name: str(name, 60) };
     const updated = await TableModel.findOneAndUpdate(
       query,
       { $set: { ...(status && { status }), ...(currentOrderId !== undefined && { currentOrderId }) } },

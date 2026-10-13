@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth, str } from '@/lib/auth';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
@@ -34,6 +35,9 @@ async function getNextOrderSequence(): Promise<number> {
 }
 
 export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req, 'data.read');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const { searchParams } = new URL(req.url);
@@ -54,14 +58,15 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireAuth(req, 'order.create');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
     const {
-      tableName,
       guestName = '',
       guestPhone = '',
-      staffName = 'Captain 1',
       bookingId = null,
       items = [],
       notes = '',
@@ -69,6 +74,10 @@ export async function POST(req: NextRequest) {
       duration = 45,
       taxPercent = 5,
     } = body;
+    const tableName = str(body.tableName, 60);
+    if (!tableName) return NextResponse.json({ success: false, error: 'Select a table' }, { status: 400 });
+    // Orders are always recorded under the signed-in staff member
+    const staffName = auth.actorName;
 
     // Prevent duplicate collisions: if table already has an active open order, append items
     const existingOpenOrder = await OrderModel.findOne({ tableName, closed: false });
@@ -204,6 +213,9 @@ export async function POST(req: NextRequest) {
 
 // Add more items to an existing running order
 export async function PATCH(req: NextRequest) {
+  const guard = await requireAuth(req, 'order.create');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -218,6 +230,9 @@ export async function PATCH(req: NextRequest) {
     }
     if (!existingOrder) {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    }
+    if (existingOrder.closed) {
+      return NextResponse.json({ success: false, error: 'This bill is already closed' }, { status: 409 });
     }
 
     // Append items to order

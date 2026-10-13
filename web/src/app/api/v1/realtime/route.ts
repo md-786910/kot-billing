@@ -1,8 +1,12 @@
 import { NextRequest } from 'next/server';
+import { requireAuth } from '@/lib/auth';
 import { realtimeHub, RealtimeMessage } from '@/lib/realtime';
 
 
 export async function GET(req: NextRequest) {
+  const guard = await requireAuth(req, 'data.read');
+  if (!guard.ok) return guard.response;
+  const { auth } = guard;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -48,7 +52,6 @@ export async function GET(req: NextRequest) {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
     },
   });
 }
