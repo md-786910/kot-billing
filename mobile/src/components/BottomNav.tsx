@@ -1,10 +1,21 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
-import { MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
-import { COLORS } from '../constants/theme';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS, RADIUS, SPACE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { AppText } from '../ui';
 
 export type TabKey = 'tables' | 'order' | 'kots' | 'shisha' | 'settings';
+
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+const TABS: { key: TabKey; label: string; icon: IconName }[] = [
+  { key: 'tables', label: 'Tables', icon: 'table-furniture' },
+  { key: 'order', label: 'Order', icon: 'silverware-fork-knife' },
+  { key: 'kots', label: 'KOTs', icon: 'receipt' },
+  { key: 'shisha', label: 'Shisha', icon: 'fire' },
+  { key: 'settings', label: 'Account', icon: 'account-circle-outline' },
+];
 
 interface BottomNavProps {
   activeTab: TabKey;
@@ -13,93 +24,42 @@ interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
   const { cartCount, kots } = usePOS();
-  const activeKotsCount = kots.filter((k) => k.status !== 'SERVED').length;
+  const badges: Partial<Record<TabKey, number>> = {
+    order: cartCount,
+    kots: kots.filter((k) => k.status === 'NEW' || k.status === 'PREPARING' || k.status === 'READY').length,
+  };
 
   return (
-    <View style={styles.navBar}>
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => onTabChange('tables')}
-      >
-        <MaterialCommunityIcons
-          name="table-furniture"
-          size={22}
-          color={activeTab === 'tables' ? COLORS.gold : COLORS.textMuted}
-        />
-        <Text style={[styles.navLabel, activeTab === 'tables' && styles.navLabelActive]}>
-          Tables
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => onTabChange('order')}
-      >
-        <View>
-          <MaterialCommunityIcons
-            name="cart-plus"
-            size={22}
-            color={activeTab === 'order' ? COLORS.gold : COLORS.textMuted}
-          />
-          {cartCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{cartCount}</Text>
+    <View style={styles.navBar} accessibilityRole="tablist">
+      {TABS.map((tab) => {
+        const active = tab.key === activeTab;
+        const badge = badges[tab.key] ?? 0;
+        return (
+          <Pressable
+            key={tab.key}
+            testID={`tab-${tab.key}`}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={badge > 0 ? `${tab.label}, ${badge}` : tab.label}
+            onPress={() => onTabChange(tab.key)}
+            style={styles.navItem}
+          >
+            <View style={[styles.iconWrap, active && styles.iconWrapActive]}>
+              <MaterialCommunityIcons name={tab.icon} size={24} color={active ? COLORS.gold : COLORS.textMuted} />
+              {badge > 0 && (
+                <View style={[styles.badge, tab.key === 'kots' && { backgroundColor: COLORS.kitchen }]}>
+                  <AppText variant="badge" style={{ color: tab.key === 'kots' ? COLORS.bgPrimary : COLORS.onPrimary }}>
+                    {badge > 99 ? '99+' : badge}
+                  </AppText>
+                </View>
+              )}
             </View>
-          )}
-        </View>
-        <Text style={[styles.navLabel, activeTab === 'order' && styles.navLabelActive]}>
-          Order
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => onTabChange('kots')}
-      >
-        <View>
-          <FontAwesome5
-            name="concierge-bell"
-            size={18}
-            color={activeTab === 'kots' ? COLORS.gold : COLORS.textMuted}
-          />
-          {activeKotsCount > 0 && (
-            <View style={[styles.badge, { backgroundColor: COLORS.kitchen }]}>
-              <Text style={styles.badgeText}>{activeKotsCount}</Text>
-            </View>
-          )}
-        </View>
-        <Text style={[styles.navLabel, activeTab === 'kots' && styles.navLabelActive]}>
-          Live KOTs
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => onTabChange('shisha')}
-      >
-        <MaterialCommunityIcons
-          name="fire"
-          size={22}
-          color={activeTab === 'shisha' ? COLORS.gold : COLORS.textMuted}
-        />
-        <Text style={[styles.navLabel, activeTab === 'shisha' && styles.navLabelActive]}>
-          Shisha
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => onTabChange('settings')}
-      >
-        <MaterialCommunityIcons
-          name="account-cog"
-          size={22}
-          color={activeTab === 'settings' ? COLORS.gold : COLORS.textMuted}
-        />
-        <Text style={[styles.navLabel, activeTab === 'settings' && styles.navLabelActive]}>
-          Settings
-        </Text>
-      </TouchableOpacity>
+            <AppText variant="label" style={{ color: active ? COLORS.gold : COLORS.textMuted }}>
+              {tab.label}
+            </AppText>
+          </Pressable>
+        );
+      })}
     </View>
   );
 };
@@ -110,37 +70,24 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.borderSubtle,
     backgroundColor: COLORS.bgSecondary,
-    paddingVertical: 8,
+    paddingTop: SPACE.sm,
+    paddingBottom: SPACE.sm,
   },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 3,
-  },
-  navLabel: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-  },
-  navLabelActive: {
-    color: COLORS.gold,
-    fontWeight: '700',
-  },
+  navItem: { flex: 1, alignItems: 'center', gap: 2, minHeight: 56 },
+  iconWrap: { width: 56, height: 32, borderRadius: RADIUS.full, alignItems: 'center', justifyContent: 'center' },
+  iconWrapActive: { backgroundColor: COLORS.goldSubtle },
   badge: {
     position: 'absolute',
     top: -4,
-    right: -10,
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    right: 4,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 4,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  badgeText: {
-    color: '#ffffff',
-    fontSize: 9,
-    fontWeight: '800',
+    backgroundColor: COLORS.primary,
+    borderWidth: 2,
+    borderColor: COLORS.bgSecondary,
   },
 });

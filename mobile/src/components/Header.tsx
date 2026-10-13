@@ -1,120 +1,46 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
-import { MaterialCommunityIcons, Ionicons, Feather } from '@expo/vector-icons';
-import { COLORS, roleLabel } from '../constants/theme';
+import { StyleSheet, View } from 'react-native';
+import { COLORS, SPACE, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { AppText, Banner, IconButton } from '../ui';
 
 interface HeaderProps {
-  onOpenSettings: () => void;
+  /** What this screen is about, e.g. "Tables" or "Table 4" */
+  title: string;
+  /** Optional context line; defaults to the signed-in staff member */
+  subtitle?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenSettings }) => {
-  const { isConnected, currentStaff, lock } = usePOS();
+/** Screen title on the left, Lock on the right; an offline banner appears only when needed. */
+export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
+  const { isConnected, currentStaff, lock, refreshData } = usePOS();
+  const staffLine = currentStaff ? `${currentStaff.name} · ${roleLabel(currentStaff.role)}` : '';
 
   return (
-    <View style={styles.header}>
-      <View style={styles.headerLeft}>
-        <MaterialCommunityIcons name="fire" size={24} color={COLORS.gold} />
-        <View style={{ flexShrink: 1 }}>
-          <Text style={styles.headerTitle}>LAYALI POS</Text>
-          <Text style={styles.headerSubtitle} numberOfLines={1}>
-            {currentStaff ? `${currentStaff.name} • ${roleLabel(currentStaff.role)}` : ''}
-          </Text>
+    <View style={styles.wrap}>
+      <View style={styles.header}>
+        <View style={styles.titles}>
+          <AppText variant="title" numberOfLines={1}>
+            {title}
+          </AppText>
+          <AppText variant="caption" tone="muted" numberOfLines={1}>
+            {subtitle ?? staffLine}
+          </AppText>
         </View>
+        <IconButton icon="lock" label="Lock" onPress={() => lock()} testID="lock" />
       </View>
-
-      <View style={styles.headerRight}>
-        <TouchableOpacity
-          style={[styles.connBadge, isConnected ? styles.connOnline : styles.connOffline]}
-          onPress={onOpenSettings}
-          accessibilityLabel={`${isConnected ? 'Online' : 'Offline'}. Open settings`}
-        >
-          <View style={[styles.dot, { backgroundColor: isConnected ? COLORS.vacant : COLORS.occupied }]} />
-          <Text style={styles.connText}>{isConnected ? 'Online' : 'Offline'}</Text>
-          <Ionicons name="settings-outline" size={14} color={COLORS.textMuted} style={{ marginLeft: 4 }} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.lockBtn}
-          onPress={() => lock()}
-          accessibilityRole="button"
-          accessibilityLabel="Lock"
-        >
-          <Feather name="lock" size={18} color={COLORS.textSecondary} />
-        </TouchableOpacity>
-      </View>
+      {!isConnected && (
+        <View style={styles.banner}>
+          <Banner tone="danger" text="Offline. Orders can't be sent until Wi-Fi is back." actionLabel="Retry" onAction={refreshData} />
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderSubtle,
-    backgroundColor: COLORS.bgSecondary,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 1,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  lockBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.bgSurface,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    letterSpacing: 1,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginLeft: 4,
-  },
-  connBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    minHeight: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  connOnline: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-  },
-  connOffline: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  connText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
+  wrap: { backgroundColor: COLORS.bgSecondary, borderBottomWidth: 1, borderBottomColor: COLORS.borderSubtle },
+  header: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingLeft: SPACE.lg, paddingRight: SPACE.sm, paddingVertical: SPACE.sm },
+  titles: { flex: 1 },
+  banner: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.md },
 });

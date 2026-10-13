@@ -1,92 +1,61 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { TableCard } from '../components/TableCard';
-import { COLORS } from '../constants/theme';
+import { COLORS, SPACE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { AppText, Chip, EmptyState } from '../ui';
 
 interface TablesScreenProps {
-  onSelectTableAndOrder: (tableName: string) => void;
-  onSelectTableAndBill?: (tableName: string) => void;
+  onSelectTable: (tableName: string) => void;
 }
 
-export const TablesScreen: React.FC<TablesScreenProps> = ({
-  onSelectTableAndOrder,
-  onSelectTableAndBill,
-}) => {
-  const { tables, selectedFloor, setSelectedFloor, can } = usePOS();
-  const canSettle = can('bill.settle');
+const PADDING = SPACE.lg;
+const GAP = SPACE.md;
+
+export const TablesScreen: React.FC<TablesScreenProps> = ({ onSelectTable }) => {
+  const { tables, orders, selectedFloor, setSelectedFloor } = usePOS();
+  const { width } = useWindowDimensions();
+  const columns = width >= 900 ? 4 : width >= 600 ? 3 : 2;
+  const cardWidth = Math.floor((width - PADDING * 2 - GAP * (columns - 1)) / columns);
+
+  const floors = useMemo(() => ['All', ...Array.from(new Set(tables.map((t) => t.floor)))], [tables]);
+  const openOrders = useMemo(() => {
+    const byTable = new Map<string, (typeof orders)[number]>();
+    for (const o of orders) if (!o.closed) byTable.set(o.tableName, o);
+    return byTable;
+  }, [orders]);
+
+  const visible = tables.filter((t) => selectedFloor === 'All' || t.floor === selectedFloor);
+  const inUse = tables.filter((t) => openOrders.has(t.name)).length;
 
   return (
     <View style={styles.container}>
-      {/* Floor Selector */}
-      <View style={styles.filterRow}>
-        {['All', 'Main Floor', '1st Floor', '2nd Floor'].map((fl) => (
-          <TouchableOpacity
-            key={fl}
-            style={[styles.filterPill, selectedFloor === fl && styles.filterPillActive]}
-            onPress={() => setSelectedFloor(fl)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[styles.filterPillText, selectedFloor === fl && styles.filterPillTextActive]}
-            >
-              {fl}
-            </Text>
-          </TouchableOpacity>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.floors}>
+        {floors.map((fl) => (
+          <Chip key={fl} label={fl} selected={selectedFloor === fl} onPress={() => setSelectedFloor(fl)} testID={`floor-${fl}`} />
         ))}
-      </View>
+      </ScrollView>
 
-      {/* Tables Grid */}
-      <ScrollView contentContainerStyle={styles.tableGrid} showsVerticalScrollIndicator={false}>
-        {tables
-          .filter((t) => selectedFloor === 'All' || t.floor === selectedFloor)
-          .map((table) => (
-            <TableCard
-              key={table.id}
-              table={table}
-              onSelect={onSelectTableAndOrder}
-              onSettleBill={canSettle ? onSelectTableAndBill : undefined}
-            />
-          ))}
+      <AppText variant="caption" tone="muted" style={styles.summary}>
+        {inUse} of {tables.length} tables in use
+      </AppText>
+
+      <ScrollView contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false}>
+        {visible.length === 0 ? (
+          <EmptyState icon="grid" title="No tables here" hint="Pick another floor." />
+        ) : (
+          visible.map((table) => (
+            <TableCard key={table.id} table={table} order={openOrders.get(table.name)} width={cardWidth} onSelect={onSelectTable} />
+          ))
+        )}
       </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 12,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: COLORS.bgSurface,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-  },
-  filterPillActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primaryHover,
-  },
-  filterPillText: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  filterPillTextActive: {
-    color: '#ffffff',
-  },
-  tableGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    paddingBottom: 20,
-  },
+  container: { flex: 1, backgroundColor: COLORS.bgPrimary },
+  floors: { gap: SPACE.sm, paddingHorizontal: PADDING, paddingTop: SPACE.md },
+  summary: { paddingHorizontal: PADDING, paddingTop: SPACE.md, paddingBottom: SPACE.sm },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP, paddingHorizontal: PADDING, paddingBottom: SPACE.xxl },
 });

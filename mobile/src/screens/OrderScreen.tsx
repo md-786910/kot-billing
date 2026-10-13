@@ -23,7 +23,8 @@ import { usePOS } from '../context/POSContext';
 import { OrderItem, MenuItem } from '../types';
 
 interface OrderScreenProps {
-  onOrderSuccess: () => void;
+  /** Called after a KOT is sent, with a short confirmation for the toast */
+  onOrderSuccess: (message: string) => void;
 }
 
 export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
@@ -360,7 +361,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         onClose={() => setShowReviewModal(false)}
         onSuccess={() => {
           setShowReviewModal(false);
-          onOrderSuccess();
+          onOrderSuccess(`Sent to kitchen · ${selectedTable}`);
         }}
       />
 

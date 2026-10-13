@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, SafeAreaView, StatusBar, View, ActivityIndicator } from 'react-native';
 import { POSProvider, usePOS } from './src/context/POSContext';
 import { Header } from './src/components/Header';
@@ -11,30 +11,55 @@ import { OrderScreen } from './src/screens/OrderScreen';
 import { KOTsScreen } from './src/screens/KOTsScreen';
 import { ShishaScreen } from './src/screens/ShishaScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
-import { COLORS } from './src/constants/theme';
+import { COLORS, SPACE } from './src/constants/theme';
+import { Banner } from './src/ui';
+
+const TAB_TITLES: Record<TabKey, string> = {
+  tables: 'Tables',
+  order: 'Order',
+  kots: 'KOTs',
+  shisha: 'Shisha',
+  settings: 'Account',
+};
 
 // Only mounted while a staff member is signed in, so each sign-in starts on the Tables tab
 function MainApp() {
   const [activeTab, setActiveTab] = useState<TabKey>('tables');
-  const { setSelectedTable } = usePOS();
+  const [toast, setToast] = useState<string | null>(null);
+  const { selectedTable, setSelectedTable } = usePOS();
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(id);
+  }, [toast]);
 
   const handleSelectTable = (tableName: string) => {
     setSelectedTable(tableName);
     setActiveTab('order');
   };
 
+  // After a KOT is sent the waiter is usually heading to the next table
+  const handleOrderSent = (message: string) => {
+    setToast(message);
+    setActiveTab('tables');
+  };
+
   return (
     <>
-      <Header onOpenSettings={() => setActiveTab('settings')} />
+      <Header title={activeTab === 'order' ? selectedTable : TAB_TITLES[activeTab]} />
 
       <View style={styles.content}>
-        {activeTab === 'tables' && (
-          <TablesScreen onSelectTableAndOrder={handleSelectTable} onSelectTableAndBill={handleSelectTable} />
-        )}
-        {activeTab === 'order' && <OrderScreen onOrderSuccess={() => setActiveTab('kots')} />}
+        {activeTab === 'tables' && <TablesScreen onSelectTable={handleSelectTable} />}
+        {activeTab === 'order' && <OrderScreen onOrderSuccess={handleOrderSent} />}
         {activeTab === 'kots' && <KOTsScreen />}
         {activeTab === 'shisha' && <ShishaScreen />}
         {activeTab === 'settings' && <SettingsScreen />}
+        {toast && (
+          <View style={styles.toast} pointerEvents="box-none" testID="toast">
+            <Banner tone="success" text={toast} />
+          </View>
+        )}
       </View>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
@@ -83,6 +108,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  toast: {
+    position: 'absolute',
+    left: SPACE.lg,
+    right: SPACE.lg,
+    bottom: SPACE.lg,
   },
   splash: {
     flex: 1,
