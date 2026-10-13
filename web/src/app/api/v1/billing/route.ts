@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { audit, authorizeOrApprove, requireAuth } from '@/lib/auth';
+import { audit, AuthContext, authorizeOrApprove, requireAuth } from '@/lib/auth';
+import { withIdempotency } from '@/lib/idempotency';
 import { CASHIER_DISCOUNT_LIMIT_PERCENT } from '@/lib/auth/permissions';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
@@ -9,10 +10,14 @@ import { ShiftRegisterModel } from '@/models/ShiftRegister';
 import { PrivateBookingModel } from '@/models/PrivateBooking';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
+// A retried settlement with the same idempotencyKey returns the first result instead of paying twice
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req, 'bill.settle');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
+  return withIdempotency(req, guard.auth, () => settleBill(req, guard.auth));
+}
+
+async function settleBill(req: NextRequest, auth: AuthContext) {
   try {
     await connectToDatabase();
     const body = await req.json();

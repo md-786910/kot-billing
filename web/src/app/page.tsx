@@ -300,6 +300,7 @@ function POSApp() {
     notes: string;
     shishaAdvance: number;
     duration: number;
+    idempotencyKey: string;
   }) => {
     try {
       const res = await fetch('/api/v1/orders', {
@@ -309,26 +310,29 @@ function POSApp() {
           tableName: orderData.location,
           guestName: orderData.guest,
           guestPhone: orderData.phone,
-          staffName: orderData.staff,
           bookingId: orderData.bookingId,
           items: orderData.items,
           notes: orderData.notes,
           shishaAdvance: orderData.shishaAdvance,
           duration: orderData.duration,
           taxPercent: settings.taxPercent,
+          idempotencyKey: orderData.idempotencyKey,
         }),
       });
 
       const json = await res.json();
-      if (json.success) {
-        if (settings.soundAlerts) playOrderChime();
-        await refreshAllData();
-        setActiveTab('live');
-      } else {
-        alert(json.error || 'Failed to submit order');
+      if (!json.success) {
+        // 401 is handled by the auth gate (back to the PIN lock); the cart is kept for the retry
+        if (res.status !== 401) alert(json.error || 'Failed to submit order');
+        return false;
       }
-    } catch (err: any) {
-      alert('Network error: ' + err.message);
+      if (settings.soundAlerts) playOrderChime();
+      await refreshAllData();
+      setActiveTab('live');
+      return true;
+    } catch {
+      alert('Cannot reach the server. The order was not sent — please try again.');
+      return false;
     }
   };
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, str } from '@/lib/auth';
+import { AuthContext, requireAuth, str } from '@/lib/auth';
+import { withIdempotency } from '@/lib/idempotency';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
@@ -56,10 +57,14 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Retried punches (double tap, timeout after the server saved) carry the same idempotencyKey and never duplicate KOTs
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req, 'order.create');
   if (!guard.ok) return guard.response;
-  const { auth } = guard;
+  return withIdempotency(req, guard.auth, () => createOrder(req, guard.auth));
+}
+
+async function createOrder(req: NextRequest, auth: AuthContext) {
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -214,6 +219,10 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const guard = await requireAuth(req, 'order.create');
   if (!guard.ok) return guard.response;
+  return withIdempotency(req, guard.auth, () => addRound(req));
+}
+
+async function addRound(req: NextRequest) {
   try {
     await connectToDatabase();
     const body = await req.json();

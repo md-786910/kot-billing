@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Order, PrivateBooking, AppSettings } from '../types/pos';
 import { formatINR, formatDateTime } from '../utils/format';
 import {
@@ -156,8 +156,18 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(settings.loungeName)}&am=${balanceDue}&cu=INR`;
 
   // Confirmation toasts only appear once the server has accepted the settlement
+  const settlingRef = useRef(false);
   const handleSettle = async () => {
-    if (!currentOrder) return;
+    if (!currentOrder || settlingRef.current) return;
+    settlingRef.current = true;
+    try {
+      await settle(currentOrder);
+    } finally {
+      settlingRef.current = false;
+    }
+  };
+
+  const settle = async (currentOrder: Order) => {
 
     if (isSplitMode) {
       if (splitTotal <= 0) {

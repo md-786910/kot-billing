@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
   MenuItem,
@@ -60,7 +60,8 @@ interface POSOrderViewProps {
     notes: string;
     shishaAdvance: number;
     duration: number;
-  }) => void;
+    idempotencyKey: string;
+  }) => Promise<boolean>;
   onGoToBooking: (venue: 'VIP Lounge' | 'Couple Cabin') => void;
   onGoToBilling?: (orderId: string) => void;
   onRefresh?: () => void;
@@ -86,6 +87,12 @@ const VOID_REASONS = [
   'Guest Disliked Taste / Replaced',
   'Management Courtesy Discretion',
 ];
+
+// Random request id; works on plain-HTTP LAN terminals where crypto.randomUUID is unavailable
+function requestKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 export const POSOrderView: React.FC<POSOrderViewProps> = ({
   menu,
@@ -455,7 +462,13 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
     return runningActiveItems.reduce((s, it) => s + it.price * it.qty, 0);
   }, [runningActiveItems]);
 
-  const handleOrderSubmit = () => {
+  // One key per cart submission: retries after a timeout reuse it, so the kitchen never gets a duplicate KOT
+  const submittingRef = useRef(false);
+  const submitKeyRef = useRef<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleOrderSubmit = async () => {
+    if (submittingRef.current) return;
     if (cart.length === 0) {
       alert('Please select at least one menu item to create the order docket.');
       return;
@@ -471,7 +484,10 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
       if (!confirmProceed) return;
     }
 
-    onSubmitOrder({
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    submitKeyRef.current ??= requestKey();
+    const saved = await onSubmitOrder({
       location: currentLocation,
       guest: guestName.trim(),
       phone: guestPhone.trim(),
@@ -481,8 +497,13 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
       notes: notes.trim(),
       shishaAdvance: Number(shishaAdvance) || 0,
       duration: Number(shishaDuration) || 45,
+      idempotencyKey: submitKeyRef.current,
     });
+    submittingRef.current = false;
+    setIsSubmitting(false);
+    if (!saved) return;
 
+    submitKeyRef.current = null;
     setSuccessToast(`Order punched for ${currentLocation}! Station KOTs generated.`);
     clearCart();
     setTimeout(() => setSuccessToast(null), 4000);
@@ -1277,7 +1298,7 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
 
               <button
                 onClick={handleOrderSubmit}
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || isSubmitting}
                 className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all ${
                   cart.length > 0
                     ? 'bg-[#9f1119] hover:bg-[#b91c1c] text-white shadow-xl shadow-[#9f1119]/30 active:scale-[0.99]'
@@ -1285,7 +1306,7 @@ export const POSOrderView: React.FC<POSOrderViewProps> = ({
                 }`}
               >
                 <Send className="w-4 h-4" />
-                <span>Punch Docket & Fire Station KOTs</span>
+                <span>{isSubmitting ? 'Sending to kitchen…' : 'Punch Docket & Fire Station KOTs'}</span>
               </button>
             </div>
           </div>

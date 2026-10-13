@@ -4,7 +4,9 @@ import * as SecureStore from 'expo-secure-store';
 const KEYS = {
   serverUrl: 'layali.serverUrl',
   deviceToken: 'layali.deviceToken',
-  sessionToken: 'layali.sessionToken',
+  // Staff sessions now live in memory only; this key is read once at boot to revoke and delete
+  // a token left behind by older app versions.
+  legacySessionToken: 'layali.sessionToken',
 } as const;
 
 export type StoredKey = keyof typeof KEYS;
@@ -36,10 +38,10 @@ export async function writeStored(key: StoredKey, value: string | null): Promise
 }
 
 export async function readAllStored() {
-  const [serverUrl, deviceToken, sessionToken] = await Promise.all([
+  const [serverUrl, deviceToken, legacySessionToken] = await Promise.all([
     readStored('serverUrl'),
     readStored('deviceToken'),
-    readStored('sessionToken'),
+    readStored('legacySessionToken'),
   ]);
-  return { serverUrl, deviceToken, sessionToken };
+  return { serverUrl, deviceToken, legacySessionToken };
 }

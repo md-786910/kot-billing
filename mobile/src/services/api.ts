@@ -8,6 +8,19 @@ let sessionToken: string | null = null;
 let unauthorizedHandler: ((sessionTokenUsed: string | null) => void) | null = null;
 
 const REQUEST_TIMEOUT_MS = 10_000;
+/** Order punches and settlements can take longer (KOT printing, several writes) */
+export const SLOW_REQUEST_TIMEOUT_MS = 25_000;
+
+/** Random key so a retried submission is applied at most once by the server (max 100 chars) */
+export function newIdempotencyKey(): string {
+  const random = () => Math.random().toString(36).slice(2, 10);
+  return `m-${Date.now().toString(36)}-${random()}${random()}${random()}`;
+}
+
+/** The server's reply when the same idempotencyKey is still being processed */
+export function isStillProcessing(status: number | undefined, message: string | undefined): boolean {
+  return status === 409 && /already being processed/i.test(message ?? '');
+}
 
 /** Adds http:// when no scheme is given and strips trailing slashes */
 export function normalizeServerUrl(url: string): string {
@@ -83,6 +96,8 @@ export async function request<T = unknown>(path: string, options: RequestOptions
   if (!serverUrl) throw new ApiError(0, 'Server address is not set');
 
   const { method = 'GET', body, skipUnauthorizedHook = false, timeoutMs = REQUEST_TIMEOUT_MS } = options;
+  // Server, device token and session are all read before the first await: callers rely on this to
+  // send a last request to the old server just before switching or clearing them.
   const tokenUsed = options.sessionTokenOverride !== undefined ? options.sessionTokenOverride : sessionToken;
 
   const headers: Record<string, string> = { 'X-Client': 'mobile', Accept: 'application/json' };
@@ -158,8 +173,8 @@ export async function pairDevice(code: string): Promise<{ device: AuthDevice; de
   return { device: json.data, deviceToken: json.deviceToken };
 }
 
-export async function unpairDevice(): Promise<void> {
-  await request('/api/v1/devices/pair', { method: 'DELETE', skipUnauthorizedHook: true });
+export async function unpairDevice(timeoutMs?: number): Promise<void> {
+  await request('/api/v1/devices/pair', { method: 'DELETE', skipUnauthorizedHook: true, timeoutMs });
 }
 
 /** Names for the lock screen picker (needs a paired device) */
@@ -273,7 +288,7 @@ export async function fetchKOTs(): Promise<KOT[]> {
 
 type OrderLine = { name: string; price: number; station: string; category: string; qty: number; notes?: string };
 
-/** The server records the signed-in staff member on the order */
+/** The server records the signed-in staff member on the order. Reuse `idempotencyKey` when retrying. */
 export function submitMobileOrder(params: {
   tableName: string;
   guestName?: string;
@@ -282,12 +297,18 @@ export function submitMobileOrder(params: {
   notes?: string;
   shishaAdvance?: number;
   duration?: number;
+  idempotencyKey: string;
 }) {
-  return request('/api/v1/orders', { method: 'POST', body: params });
+  return request('/api/v1/orders', { method: 'POST', body: params, timeoutMs: SLOW_REQUEST_TIMEOUT_MS });
 }
 
-export function addItemsToRunningOrder(params: { orderId: string; newItems: OrderLine[]; notes?: string }) {
-  return request('/api/v1/orders', { method: 'PATCH', body: params });
+export function addItemsToRunningOrder(params: {
+  orderId: string;
+  newItems: OrderLine[];
+  notes?: string;
+  idempotencyKey: string;
+}) {
+  return request('/api/v1/orders', { method: 'PATCH', body: params, timeoutMs: SLOW_REQUEST_TIMEOUT_MS });
 }
 
 export function extendShishaPot(kotId: string, addMinutes: number = 15) {
@@ -317,7 +338,7 @@ export interface PaymentLine {
   creditRef?: string;
 }
 
-/** `approvalPin` is a manager's PIN for discounts above the cashier limit */
+/** `approvalPin` is a manager's PIN for discounts above the cashier limit. Reuse `idempotencyKey` when retrying. */
 export function settleOrderBill(params: {
   orderId: string;
   payment?: PaymentLine;
@@ -328,8 +349,9 @@ export function settleOrderBill(params: {
   taxPercent?: number;
   closeOrder?: boolean;
   approvalPin?: string;
+  idempotencyKey: string;
 }) {
-  return request('/api/v1/billing', { method: 'POST', body: params });
+  return request('/api/v1/billing', { method: 'POST', body: params, timeoutMs: SLOW_REQUEST_TIMEOUT_MS });
 }
 
 export function mergeTableOrders(params: { sourceTable: string; targetTable: string }) {

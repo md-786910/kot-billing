@@ -93,6 +93,12 @@ export function Modal({ title, onClose, children, width = 'max-w-sm' }: {
   children: React.ReactNode;
   width?: string;
 }) {
+  // Take focus so keyboard input can't reach controls behind the dialog
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
   React.useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -101,7 +107,7 @@ export function Modal({ title, onClose, children, width = 'max-w-sm' }: {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4 outline-none" role="dialog" aria-modal="true" aria-label={title}>
       <div className={`w-full ${width} bg-[#12141e] border border-neutral-800 rounded-2xl p-5 max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-white">{title}</h2>
@@ -154,9 +160,12 @@ export function PinPad({ onSubmit, busy, autoSubmitAt }: {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (busy || e.target instanceof HTMLInputElement) return;
+      // Keys the pad handles must not also activate a focused button behind it
       if (/^\d$/.test(e.key)) press(e.key);
       else if (e.key === 'Backspace') backspace();
       else if (e.key === 'Enter') submit();
+      else return;
+      e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
