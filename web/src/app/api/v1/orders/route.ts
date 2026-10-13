@@ -1,39 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AuthContext, requireAuth, str } from '@/lib/auth';
+import { AuthContext, requireAuth, serverError, str } from '@/lib/auth';
+import { createStationKots, isDuplicateKey, nextOrderNumber, priceItems } from '@/lib/orders';
 import { withIdempotency } from '@/lib/idempotency';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
-import { KOTModel } from '@/models/KOT';
 import { TableModel } from '@/models/Table';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
-
-async function getNextKotSequence(): Promise<number> {
-  const kots = await KOTModel.find({ kotNumber: /^KOT-/ }).select('kotNumber').lean();
-  let maxSeq = 0;
-  for (const k of kots) {
-    const match = k.kotNumber.match(/^KOT-(\d+)/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxSeq) maxSeq = num;
-    }
-  }
-  return maxSeq + 1;
-}
-
-async function getNextOrderSequence(): Promise<number> {
-  const orders = await OrderModel.find({ orderNumber: /^LY-/ }).select('orderNumber').lean();
-  let maxSeq = 1000;
-  for (const o of orders) {
-    const match = o.orderNumber.match(/^LY-(\d+)/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxSeq) maxSeq = num;
-    }
-  }
-  return maxSeq + 1;
-}
 
 export async function GET(req: NextRequest) {
   const guard = await requireAuth(req, 'data.read');
@@ -68,150 +42,68 @@ async function createOrder(req: NextRequest, auth: AuthContext) {
   try {
     await connectToDatabase();
     const body = await req.json();
-    const {
-      guestName = '',
-      guestPhone = '',
-      bookingId = null,
-      items = [],
-      notes = '',
-      shishaAdvance = 0,
-      duration = 45,
-      taxPercent = 5,
-    } = body;
     const tableName = str(body.tableName, 60);
     if (!tableName) return NextResponse.json({ success: false, error: 'Select a table' }, { status: 400 });
-    // Orders are always recorded under the signed-in staff member
-    const staffName = auth.actorName;
-
-    // Prevent duplicate collisions: if table already has an active open order, append items
-    const existingOpenOrder = await OrderModel.findOne({ tableName, closed: false });
-    if (existingOpenOrder) {
-      existingOpenOrder.items.push(...items);
-      if (guestName && !existingOpenOrder.guestName) existingOpenOrder.guestName = guestName;
-      if (guestPhone && !existingOpenOrder.guestPhone) existingOpenOrder.guestPhone = guestPhone;
-      if (bookingId && !existingOpenOrder.bookingId) existingOpenOrder.bookingId = bookingId;
-      await existingOpenOrder.save();
-
-      const stations = ['Kitchen', 'Beverage Counter', 'Shisha Master'] as const;
-      const createdKots: any[] = [];
-      let nextKotSeq = await getNextKotSequence();
-
-      for (const station of stations) {
-        const stationItems = items.filter((it: any) => it.station === station);
-        if (stationItems.length > 0) {
-          const kotNumber = `KOT-${String(nextKotSeq++).padStart(4, '0')}`;
-          const newKot = await KOTModel.create({
-            kotNumber,
-            orderId: existingOpenOrder._id.toString(),
-            orderNumber: existingOpenOrder.orderNumber,
-            tableName,
-            guestName: existingOpenOrder.guestName,
-            station,
-            items: stationItems.map((it: any) => ({
-              name: it.name,
-              price: it.price,
-              qty: it.qty,
-              notes: it.notes || '',
-            })),
-            notes,
-            duration: station === 'Shisha Master' ? duration : undefined,
-            status: 'NEW',
-          });
-          createdKots.push(newKot.toObject());
-        }
-      }
-
-      broadcastRealtimeEvent('ORDER_UPDATED', { order: existingOpenOrder.toObject(), kots: createdKots });
-      for (const k of createdKots) {
-        broadcastRealtimeEvent('KOT_CREATED', k);
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          order: existingOpenOrder,
-          kots: createdKots,
-          appendedToExisting: true,
-        },
-      });
+    if (!(await TableModel.exists({ name: tableName }))) {
+      return NextResponse.json({ success: false, error: `${tableName} does not exist` }, { status: 404 });
     }
+    const priced = await priceItems(body.items);
+    if ('error' in priced) return NextResponse.json({ success: false, error: priced.error }, { status: priced.status });
+    const { items } = priced;
 
-    // Generate next Order Number: LY-XXXX
-    const nextNum = await getNextOrderSequence();
-    const orderNumber = `LY-${nextNum}`;
+    const guestName = str(body.guestName, 80);
+    const guestPhone = str(body.guestPhone, 20);
+    const bookingId = str(body.bookingId, 40) || null;
+    const notes = str(body.notes, 500);
+    const duration = Number(body.duration) > 0 ? Math.min(Number(body.duration), 600) : 45;
 
-    // Create the Order document
-    const newOrder = await OrderModel.create({
-      orderNumber,
-      tableName,
-      guestName,
-      guestPhone,
-      staffName,
-      bookingId,
-      status: 'OPEN',
-      items,
-      notes,
-      shishaAdvance: Number(shishaAdvance),
-      duration: Number(duration),
-      taxPercent: Number(taxPercent),
-      discountAmount: 0,
-      payments: [],
-      closed: false,
-    });
-
-    // Update table occupancy
-    await TableModel.updateOne(
-      { name: tableName },
-      { status: 'OCCUPIED', currentOrderId: newOrder._id.toString() }
-    );
-
-    // Group items by station and create KOTs
-    const stations = ['Kitchen', 'Beverage Counter', 'Shisha Master'] as const;
-    const createdKots: any[] = [];
-    let nextKotSeq = await getNextKotSequence();
-
-    for (const station of stations) {
-      const stationItems = items.filter((it: any) => it.station === station);
-      if (stationItems.length > 0) {
-        const kotNumber = `KOT-${String(nextKotSeq++).padStart(4, '0')}`;
-        const newKot = await KOTModel.create({
-          kotNumber,
-          orderId: newOrder._id.toString(),
-          orderNumber: newOrder.orderNumber,
+    // A table has one running bill: append to it, or open it. The unique index settles simultaneous first punches.
+    let order = await OrderModel.findOne({ tableName, closed: false });
+    let appended = !!order;
+    if (!order) {
+      try {
+        order = await OrderModel.create({
+          orderNumber: await nextOrderNumber(),
           tableName,
           guestName,
-          station,
-          items: stationItems.map((it: any) => ({
-            name: it.name,
-            price: it.price,
-            qty: it.qty,
-            notes: it.notes || '',
-          })),
+          guestPhone,
+          staffName: auth.actorName,
+          bookingId,
+          status: 'OPEN',
+          items,
           notes,
-          duration: station === 'Shisha Master' ? duration : undefined,
-          status: 'NEW',
+          shishaAdvance: Math.max(0, Number(body.shishaAdvance) || 0),
+          duration,
+          taxPercent: Number(body.taxPercent) >= 0 ? Number(body.taxPercent) : 5,
+          discountAmount: 0,
+          payments: [],
+          closed: false,
         });
-        createdKots.push(newKot.toObject());
+      } catch (error) {
+        if (!isDuplicateKey(error)) throw error;
+        order = await OrderModel.findOne({ tableName, closed: false });
+        if (!order) throw error;
+        appended = true;
       }
     }
-
-    // Broadcast realtime notifications
-    broadcastRealtimeEvent('ORDER_CREATED', { order: newOrder.toObject(), kots: createdKots });
-    broadcastRealtimeEvent('TABLE_STATUS_CHANGED', { name: tableName, status: 'OCCUPIED' });
-    for (const k of createdKots) {
-      broadcastRealtimeEvent('KOT_CREATED', k);
+    if (appended) {
+      order.items.push(...items);
+      if (guestName && !order.guestName) order.guestName = guestName;
+      if (guestPhone && !order.guestPhone) order.guestPhone = guestPhone;
+      if (bookingId && !order.bookingId) order.bookingId = bookingId;
+      await order.save();
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        order: newOrder,
-        kots: createdKots,
-      },
-    });
-  } catch (error: any) {
-    console.error('Order creation error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    await TableModel.updateOne({ name: tableName }, { status: 'OCCUPIED', currentOrderId: order._id.toString() });
+    const kots = await createStationKots(order, items, notes, duration);
+
+    broadcastRealtimeEvent(appended ? 'ORDER_UPDATED' : 'ORDER_CREATED', { order: order.toObject(), kots });
+    broadcastRealtimeEvent('TABLE_STATUS_CHANGED', { name: tableName, status: 'OCCUPIED' });
+    for (const k of kots) broadcastRealtimeEvent('KOT_CREATED', k);
+
+    return NextResponse.json({ success: true, data: { order, kots, appendedToExisting: appended } });
+  } catch (error) {
+    return serverError(error);
   }
 }
 
@@ -226,65 +118,25 @@ async function addRound(req: NextRequest) {
   try {
     await connectToDatabase();
     const body = await req.json();
-    const { orderId, newItems = [], notes = '' } = body;
+    const orderId = str(body.orderId, 40);
+    const order = mongoose.isValidObjectId(orderId)
+      ? await OrderModel.findById(orderId)
+      : await OrderModel.findOne({ orderNumber: orderId, closed: false });
+    if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    if (order.closed) return NextResponse.json({ success: false, error: 'This bill is already closed' }, { status: 409 });
 
-    let existingOrder = null;
-    if (mongoose.isValidObjectId(orderId)) {
-      existingOrder = await OrderModel.findById(orderId);
-    }
-    if (!existingOrder) {
-      existingOrder = await OrderModel.findOne({ orderNumber: orderId, closed: false });
-    }
-    if (!existingOrder) {
-      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
-    }
-    if (existingOrder.closed) {
-      return NextResponse.json({ success: false, error: 'This bill is already closed' }, { status: 409 });
-    }
+    const priced = await priceItems(body.newItems);
+    if ('error' in priced) return NextResponse.json({ success: false, error: priced.error }, { status: priced.status });
 
-    // Append items to order
-    existingOrder.items.push(...newItems);
-    await existingOrder.save();
+    order.items.push(...priced.items);
+    await order.save();
+    const newKots = await createStationKots(order, priced.items, str(body.notes, 500), order.duration);
 
-    // Generate incremental KOT for only the new items
-    const stations = ['Kitchen', 'Beverage Counter', 'Shisha Master'] as const;
-    const createdKots: any[] = [];
-    let nextKotSeq = await getNextKotSequence();
+    broadcastRealtimeEvent('ORDER_UPDATED', { order: order.toObject(), kots: newKots });
+    for (const k of newKots) broadcastRealtimeEvent('KOT_CREATED', k);
 
-    for (const station of stations) {
-      const stationItems = newItems.filter((it: any) => it.station === station);
-      if (stationItems.length > 0) {
-        const kotNumber = `KOT-${String(nextKotSeq++).padStart(4, '0')}`;
-        const newKot = await KOTModel.create({
-          kotNumber,
-          orderId: existingOrder._id.toString(),
-          orderNumber: existingOrder.orderNumber,
-          tableName: existingOrder.tableName,
-          guestName: existingOrder.guestName,
-          station,
-          items: stationItems.map((it: any) => ({
-            name: it.name,
-            price: it.price,
-            qty: it.qty,
-            notes: it.notes || '',
-          })),
-          notes,
-          status: 'NEW',
-        });
-        createdKots.push(newKot.toObject());
-      }
-    }
-
-    broadcastRealtimeEvent('ORDER_UPDATED', { order: existingOrder.toObject(), kots: createdKots });
-    for (const k of createdKots) {
-      broadcastRealtimeEvent('KOT_CREATED', k);
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: { order: existingOrder, newKots: createdKots },
-    });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, data: { order, newKots } });
+  } catch (error) {
+    return serverError(error);
   }
 }

@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import { Station } from './MenuItem';
 
-export type OrderStatus = 'OPEN' | 'SETTLED' | 'VOIDED';
+export type OrderStatus = 'OPEN' | 'SETTLED' | 'VOIDED' | 'MERGED';
 
 export interface IOrderItem {
   name: string;
@@ -116,7 +116,7 @@ const OrderSchema = new Schema<IOrder>(
     shiftId: { type: String },
     status: {
       type: String,
-      enum: ['OPEN', 'SETTLED', 'VOIDED'],
+      enum: ['OPEN', 'SETTLED', 'VOIDED', 'MERGED'],
       default: 'OPEN',
       index: true,
     },
@@ -140,6 +140,8 @@ const OrderSchema = new Schema<IOrder>(
 // High-speed compound queries for POS active list, table tracking and settlements
 OrderSchema.index({ closed: 1, createdAt: -1 });
 OrderSchema.index({ tableName: 1, closed: 1 });
+// A table can only have one running bill
+OrderSchema.index({ tableName: 1 }, { unique: true, partialFilterExpression: { closed: false }, name: 'one_open_order_per_table' });
 OrderSchema.index({ status: 1, createdAt: -1 });
 
 export const OrderModel: Model<IOrder> =

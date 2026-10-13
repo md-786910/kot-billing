@@ -5,7 +5,8 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { KOTModel } from '@/models/KOT';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
-const KOT_STATUSES = ['NEW', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'];
+const FLOW = ['NEW', 'PREPARING', 'READY', 'SERVED'];
+const KOT_STATUSES = [...FLOW, 'CANCELLED'];
 
 
 export async function GET(req: NextRequest) {
@@ -53,17 +54,32 @@ export async function PATCH(req: NextRequest) {
     if (status === 'READY') updateFields.readyAt = new Date();
     if (status === 'SERVED') updateFields.servedAt = new Date();
 
+    // Tickets only move forward (NEW → PREPARING → READY → SERVED); cancelling needs void rights
+    let allowedFrom: string[];
+    if (status === 'CANCELLED') {
+      if (!auth.permissions.includes('order.void')) {
+        return NextResponse.json({ success: false, error: 'You do not have permission for this action' }, { status: 403 });
+      }
+      allowedFrom = ['NEW', 'PREPARING', 'READY'];
+    } else {
+      allowedFrom = FLOW.slice(0, FLOW.indexOf(status));
+    }
+
     const key = str(kotId, 40);
-    const query: Record<string, unknown> = mongoose.isValidObjectId(key) ? { _id: key } : { kotNumber: key };
-    if (auth.device?.type === 'DISPLAY' && !auth.user) query.station = auth.device.station;
+    const match: Record<string, unknown> = mongoose.isValidObjectId(key) ? { _id: key } : { kotNumber: key };
+    if (auth.device?.type === 'DISPLAY' && !auth.user) match.station = auth.device.station;
+    const forwardOnly: Record<string, unknown> = { ...match, status: { $in: allowedFrom } };
     const updated = await KOTModel.findOneAndUpdate(
-      query,
+      forwardOnly,
       { $set: updateFields },
-      { new: true }
+      { returnDocument: 'after' }
     ).lean();
 
     if (!updated) {
-      return NextResponse.json({ success: false, error: 'KOT not found' }, { status: 404 });
+      const current = await KOTModel.findOne(match).select('status').lean();
+      return current
+        ? NextResponse.json({ success: false, error: `Ticket is already ${current.status}` }, { status: 409 })
+        : NextResponse.json({ success: false, error: 'KOT not found' }, { status: 404 });
     }
 
     broadcastRealtimeEvent('KOT_STATUS_CHANGED', updated);

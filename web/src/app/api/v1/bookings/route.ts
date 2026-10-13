@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import mongoose from 'mongoose';
+import { requireAuth, str } from '@/lib/auth';
+import { maxSuffix, nextSequence } from '@/lib/counters';
+
+const VENUES = ['VIP Lounge', 'Couple Cabin'];
 import { connectToDatabase } from '@/lib/mongodb';
 import { PrivateBookingModel } from '@/models/PrivateBooking';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
@@ -27,15 +31,19 @@ export async function POST(req: NextRequest) {
     await connectToDatabase();
     const body = await req.json();
     const { venue, guest, phone, rate, advance, hours, notes } = body;
-
-    // Generate Booking sequence BK-XXX
-    const lastBooking = await PrivateBookingModel.findOne().sort({ createdAt: -1 }).select('bookingNumber').lean();
-    let nextNum = 101;
-    if (lastBooking && lastBooking.bookingNumber) {
-      const match = lastBooking.bookingNumber.match(/\d+/);
-      if (match) nextNum = parseInt(match[0], 10) + 1;
+    if (!VENUES.includes(venue) || !str(guest, 80) || !str(phone, 20) || !(Number(rate) >= 0) || !(Number(hours) > 0)) {
+      return NextResponse.json({ success: false, error: 'Enter venue, guest, phone, rate and hours' }, { status: 400 });
     }
-    const bookingNumber = `BK-${nextNum}`;
+    // A private space can only hold one active booking
+    if (await PrivateBookingModel.exists({ venue, status: 'ACTIVE' })) {
+      return NextResponse.json({ success: false, error: `${venue} already has an active booking` }, { status: 409 });
+    }
+
+    const seq = await nextSequence('booking', async () => {
+      const all = await PrivateBookingModel.find({ bookingNumber: /^BK-/ }).select('bookingNumber').lean();
+      return maxSuffix(all.map((b) => b.bookingNumber), 'BK-', 100);
+    });
+    const bookingNumber = `BK-${seq}`;
 
     const newBooking = await PrivateBookingModel.create({
       bookingNumber,
@@ -64,12 +72,15 @@ export async function PATCH(req: NextRequest) {
   try {
     await connectToDatabase();
     const body = await req.json();
-    const { bookingId, status = 'CLOSED' } = body;
-
-    const updated = await PrivateBookingModel.findByIdAndUpdate(
-      bookingId,
-      { $set: { status, end: new Date() } },
-      { new: true }
+    const ref = str(body.bookingId, 40);
+    if (body.status !== undefined && body.status !== 'CLOSED') {
+      return NextResponse.json({ success: false, error: 'Bookings can only be closed' }, { status: 400 });
+    }
+    // The web sends the booking number ("BK-101"); other clients may send the id
+    const updated = await PrivateBookingModel.findOneAndUpdate(
+      mongoose.isValidObjectId(ref) ? { _id: ref } : { bookingNumber: ref },
+      { $set: { status: 'CLOSED', end: new Date() } },
+      { returnDocument: 'after' }
     ).lean();
 
     if (!updated) {

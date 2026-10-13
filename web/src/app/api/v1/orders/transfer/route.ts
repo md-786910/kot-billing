@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, str } from '@/lib/auth';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
@@ -14,48 +14,28 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const body = await req.json();
-    const { orderId, fromTable, toTable } = body;
+    const orderId = str(body.orderId, 40);
+    const toTable = str(body.toTable, 60);
     const staff = auth.actorName;
-
-    if (!orderId || !fromTable || !toTable) {
-      return NextResponse.json(
-        { success: false, error: 'orderId, fromTable, and toTable are required' },
-        { status: 400 }
-      );
+    if (!orderId || !toTable) {
+      return NextResponse.json({ success: false, error: 'orderId and toTable are required' }, { status: 400 });
     }
 
+    const order = mongoose.isValidObjectId(orderId)
+      ? await OrderModel.findById(orderId)
+      : await OrderModel.findOne({ orderNumber: orderId });
+    if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    if (order.closed) return NextResponse.json({ success: false, error: 'This bill is already closed' }, { status: 409 });
+    // The order's own table is the source; a client-sent "fromTable" is never trusted
+    const fromTable = order.tableName;
     if (fromTable === toTable) {
-      return NextResponse.json(
-        { success: false, error: 'Source and target tables cannot be the same' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Source and target tables cannot be the same' }, { status: 400 });
     }
-
-    // Check if target table is vacant
-    const targetTableDoc = await TableModel.findOne({ name: toTable });
-    if (!targetTableDoc) {
-      return NextResponse.json(
-        { success: false, error: `Target table ${toTable} does not exist` },
-        { status: 404 }
-      );
+    if (!(await TableModel.exists({ name: toTable }))) {
+      return NextResponse.json({ success: false, error: `Target table ${toTable} does not exist` }, { status: 404 });
     }
-
-    if (targetTableDoc.status === 'OCCUPIED' && targetTableDoc.currentOrderId) {
-      return NextResponse.json(
-        { success: false, error: `Target table ${toTable} is currently occupied` },
-        { status: 400 }
-      );
-    }
-
-    let order = null;
-    if (mongoose.isValidObjectId(orderId)) {
-      order = await OrderModel.findById(orderId);
-    }
-    if (!order) {
-      order = await OrderModel.findOne({ orderNumber: orderId });
-    }
-    if (!order) {
-      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    if (await OrderModel.exists({ tableName: toTable, closed: false })) {
+      return NextResponse.json({ success: false, error: `Target table ${toTable} is currently occupied` }, { status: 409 });
     }
 
     // Record transfer in history

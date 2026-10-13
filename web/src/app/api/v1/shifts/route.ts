@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
+import { maxSuffix, nextSequence } from '@/lib/counters';
+
+/** Sale value of the lines that were not voided */
+function netItems(items: { price: number; qty: number; isVoided?: boolean }[]) {
+  return items.filter((it) => !it.isVoided).reduce((sum, it) => sum + it.price * it.qty, 0);
+}
 import { connectToDatabase } from '@/lib/mongodb';
 import { ShiftRegisterModel } from '@/models/ShiftRegister';
 import { OrderModel } from '@/models/Order';
@@ -15,7 +21,7 @@ export async function GET(req: NextRequest) {
     if (currentShift) {
       // Calculate real-time totals from orders settled since shift opened
       const settledOrders = await OrderModel.find({
-        closed: true,
+        status: 'SETTLED',
         closedAt: { $gte: currentShift.openedAt },
       }).lean();
 
@@ -29,7 +35,7 @@ export async function GET(req: NextRequest) {
 
       settledOrders.forEach((o: any) => {
         liveDiscount += o.discountAmount || 0;
-        liveTax += (o.taxPercent * (o.items.reduce((s: number, it: any) => s + it.price * it.qty, 0) - o.discountAmount)) / 100;
+        liveTax += (o.taxPercent * Math.max(0, netItems(o.items) - (o.discountAmount || 0))) / 100;
 
         o.payments.forEach((p: any) => {
           if (p.method === 'Cash') liveCash += p.amount;
@@ -97,8 +103,11 @@ export async function POST(req: NextRequest) {
       }
 
       // Generate sequence SH-XXX
-      const count = await ShiftRegisterModel.countDocuments();
-      const shiftNumber = `SH-${String(count + 1).padStart(3, '0')}`;
+      const seq = await nextSequence('shift', async () => {
+        const all = await ShiftRegisterModel.find({ shiftNumber: /^SH-/ }).select('shiftNumber').lean();
+        return maxSuffix(all.map((sh) => sh.shiftNumber), 'SH-');
+      });
+      const shiftNumber = `SH-${String(seq).padStart(3, '0')}`;
 
       const newShift = await ShiftRegisterModel.create({
         shiftNumber,
@@ -142,7 +151,7 @@ export async function POST(req: NextRequest) {
 
       // Calculate totals from settled orders in shift
       const settledOrders = await OrderModel.find({
-        closed: true,
+        status: 'SETTLED',
         closedAt: { $gte: activeShift.openedAt },
       }).lean();
 
@@ -156,7 +165,7 @@ export async function POST(req: NextRequest) {
 
       settledOrders.forEach((o) => {
         totalDiscount += o.discountAmount || 0;
-        totalTax += (o.taxPercent * (o.items.reduce((s, it) => s + it.price * it.qty, 0) - o.discountAmount)) / 100;
+        totalTax += (o.taxPercent * Math.max(0, netItems(o.items) - (o.discountAmount || 0))) / 100;
 
         o.payments.forEach((p) => {
           if (p.method === 'Cash') totalCash += p.amount;

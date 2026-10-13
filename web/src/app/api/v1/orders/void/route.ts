@@ -1,24 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { audit, authorizeOrApprove, requireAuth } from '@/lib/auth';
+import { nextKotNumber } from '@/lib/orders';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
 import { KOTModel } from '@/models/KOT';
 import { TableModel } from '@/models/Table';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
-
-async function getNextVoidKotSequence(): Promise<number> {
-  const voidKots = await KOTModel.find({ kotNumber: /^VOID-/ }).select('kotNumber').lean();
-  let maxSeq = 0;
-  for (const k of voidKots) {
-    const match = k.kotNumber.match(/^VOID-(\d+)/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxSeq) maxSeq = num;
-    }
-  }
-  return maxSeq + 1;
-}
 
 export async function POST(req: NextRequest) {
   const guard = await requireAuth(req, 'order.create');
@@ -61,6 +49,14 @@ export async function POST(req: NextRequest) {
     if (order.closed) {
       return NextResponse.json({ success: false, error: 'This bill is already closed' }, { status: 409 });
     }
+    if (!voidEntireOrder) {
+      if (!Number.isInteger(itemIndex) || !order.items[itemIndex]) {
+        return NextResponse.json({ success: false, error: 'Item not found at index' }, { status: 400 });
+      }
+      if (order.items[itemIndex].isVoided) {
+        return NextResponse.json({ success: false, error: 'This item is already voided' }, { status: 409 });
+      }
+    }
     await audit(auth, voidEntireOrder ? 'order.voided' : 'order.item_voided', order.orderNumber, {
       itemIndex, voidQty, voidReason: String(voidReason),
     }, approval.approvedBy);
@@ -97,8 +93,7 @@ export async function POST(req: NextRequest) {
       );
 
       // Create an overall VOID docket
-      const nextKotSeq = await getNextVoidKotSequence();
-      const voidKotNumber = `VOID-${String(nextKotSeq).padStart(4, '0')}`;
+      const voidKotNumber = await nextKotNumber('VOID');
       const voidKot = await KOTModel.create({
         kotNumber: voidKotNumber,
         orderId: order._id.toString(),
@@ -127,9 +122,6 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Individual Line Item Void (with Partial Qty support)
-    if (!order.items[itemIndex]) {
-      return NextResponse.json({ success: false, error: 'Item not found at index' }, { status: 400 });
-    }
 
     const targetItem = order.items[itemIndex];
     const qtyToVoid = (voidQty && Number(voidQty) > 0 && Number(voidQty) < targetItem.qty)
@@ -163,8 +155,7 @@ export async function POST(req: NextRequest) {
     await order.save();
 
     // Create a VOID docket in KOT system so kitchen/station knows immediately
-    const nextKotSeq = await getNextVoidKotSequence();
-    const voidKotNumber = `VOID-${String(nextKotSeq).padStart(4, '0')}`;
+    const voidKotNumber = await nextKotNumber('VOID');
     const voidKot = await KOTModel.create({
       kotNumber: voidKotNumber,
       orderId: order._id.toString(),

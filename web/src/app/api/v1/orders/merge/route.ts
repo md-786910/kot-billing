@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
     targetOrder.items.push(...sourceOrder.items);
     targetOrder.shishaAdvance = (targetOrder.shishaAdvance || 0) + (sourceOrder.shishaAdvance || 0);
     targetOrder.payments.push(...sourceOrder.payments);
+    if (!targetOrder.bookingId && sourceOrder.bookingId) targetOrder.bookingId = sourceOrder.bookingId;
     targetOrder.notes = (targetOrder.notes ? targetOrder.notes + ' | ' : '') +
       `MERGED with ${sourceTable} (#${sourceOrder.orderNumber}) by ${staff}: ${reason}`;
 
@@ -68,8 +69,8 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    // 3. Close sourceOrder as Merged
-    sourceOrder.status = 'SETTLED';
+    // 3. Close sourceOrder as Merged (its items and payments now live on the target bill)
+    sourceOrder.status = 'MERGED';
     sourceOrder.closed = true;
     sourceOrder.closedAt = new Date();
     sourceOrder.notes = (sourceOrder.notes ? sourceOrder.notes + ' | ' : '') +
