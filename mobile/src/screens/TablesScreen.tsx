@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { TableCard } from '../components/TableCard';
 import { COLORS, SPACE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
-import { AppText, Chip, EmptyState } from '../ui';
+import { AppText, Chip, ChipRow, EmptyState } from '../ui';
 
 interface TablesScreenProps {
   onSelectTable: (tableName: string) => void;
@@ -18,7 +18,12 @@ export const TablesScreen: React.FC<TablesScreenProps> = ({ onSelectTable }) => 
   const columns = width >= 900 ? 4 : width >= 600 ? 3 : 2;
   const cardWidth = Math.floor((width - PADDING * 2 - GAP * (columns - 1)) / columns);
 
-  const floors = useMemo(() => ['All', ...Array.from(new Set(tables.map((t) => t.floor)))], [tables]);
+  // Main floor first, then upper floors in order
+  const floors = useMemo(() => {
+    const unique = Array.from(new Set(tables.map((t) => t.floor)));
+    unique.sort((a, b) => (a === 'Main Floor' ? -1 : b === 'Main Floor' ? 1 : a.localeCompare(b, undefined, { numeric: true })));
+    return ['All', ...unique];
+  }, [tables]);
   const openOrders = useMemo(() => {
     const byTable = new Map<string, (typeof orders)[number]>();
     for (const o of orders) if (!o.closed) byTable.set(o.tableName, o);
@@ -30,11 +35,11 @@ export const TablesScreen: React.FC<TablesScreenProps> = ({ onSelectTable }) => 
 
   return (
     <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.floors}>
+      <ChipRow style={styles.floors}>
         {floors.map((fl) => (
           <Chip key={fl} label={fl} selected={selectedFloor === fl} onPress={() => setSelectedFloor(fl)} testID={`floor-${fl}`} />
         ))}
-      </ScrollView>
+      </ChipRow>
 
       <AppText variant="caption" tone="muted" style={styles.summary}>
         {inUse} of {tables.length} tables in use
@@ -55,7 +60,7 @@ export const TablesScreen: React.FC<TablesScreenProps> = ({ onSelectTable }) => 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bgPrimary },
-  floors: { gap: SPACE.sm, paddingHorizontal: PADDING, paddingTop: SPACE.md },
+  floors: { paddingTop: SPACE.md },
   summary: { paddingHorizontal: PADDING, paddingTop: SPACE.md, paddingBottom: SPACE.sm },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP, paddingHorizontal: PADDING, paddingBottom: SPACE.xxl },
 });

@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleProp,
   StyleSheet,
   Text,
@@ -224,6 +225,21 @@ export function Chip({
         {count !== undefined ? ` ${count}` : ''}
       </AppText>
     </Pressable>
+  );
+}
+
+/** Horizontally scrolling row of chips that never clips (floors, categories, filters). */
+export function ChipRow({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={[styles.chipRow, style]}
+      contentContainerStyle={styles.chipRowContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      {children}
+    </ScrollView>
   );
 }
 
@@ -452,6 +468,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.borderDefault,
   },
   chipSelected: { backgroundColor: COLORS.gold, borderColor: COLORS.gold },
+  chipRow: { flexGrow: 0, flexShrink: 0 },
+  chipRowContent: { gap: SPACE.sm, paddingHorizontal: SPACE.lg, paddingVertical: SPACE.xs, alignItems: 'center' },
   segmented: {
     flexDirection: 'row',
     padding: 4,
