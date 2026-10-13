@@ -106,7 +106,7 @@ export const ItemVoidModal: React.FC<ItemVoidModalProps> = ({
       </Card>
 
       <View style={styles.list} accessibilityRole="radiogroup">
-        <SectionLabel>Reason</SectionLabel>
+        <SectionLabel style={styles.flushLabel}>Reason</SectionLabel>
         {VOID_REASONS.map((r) => (
           <OptionRow
             key={r.value}
@@ -145,6 +145,7 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   summary: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md },
   list: { gap: SPACE.sm },
+  flushLabel: { marginBottom: 0 },
   pinInput: {
     minHeight: TOUCH.min,
     paddingHorizontal: SPACE.lg,

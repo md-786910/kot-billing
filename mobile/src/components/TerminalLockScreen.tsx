@@ -1,19 +1,50 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
-import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
-import { COLORS, roleLabel } from '../constants/theme';
+import { StyleSheet, View, Pressable, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { COLORS, RADIUS, SPACE, TOUCH, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { errorMessage, errorStatus, fetchSignInStaff } from '../services/api';
 import { StaffUser } from '../types';
 import { useCooldown } from '../hooks/useCooldown';
+import { AppText, Banner, Button, EmptyState } from '../ui';
+import { LogoMark } from './PrivacyCover';
 
 const MIN_PIN = 4;
 const MAX_PIN = 6;
+const KEY_SIZE = 72;
 const KEY_ROWS = [
   ['1', '2', '3'],
   ['4', '5', '6'],
   ['7', '8', '9'],
 ];
+
+/** Gold initial in a circle */
+const Avatar: React.FC<{ name: string }> = ({ name }) => (
+  <View style={styles.avatar}>
+    <AppText variant="heading" tone="gold">
+      {name.charAt(0).toUpperCase()}
+    </AppText>
+  </View>
+);
+
+/** Round keypad key, at least 64dp */
+const Key: React.FC<{ label: string; onPress: () => void; disabled?: boolean; children: React.ReactNode; quiet?: boolean }> = ({
+  label,
+  onPress,
+  disabled,
+  children,
+  quiet,
+}) => (
+  <Pressable
+    accessibilityRole="button"
+    accessibilityLabel={label}
+    onPress={onPress}
+    disabled={disabled}
+    style={({ pressed }) => [styles.key, quiet && styles.keyQuiet, pressed && styles.keyPressed]}
+  >
+    {children}
+  </Pressable>
+);
 
 export const TerminalLockScreen: React.FC = () => {
   const { signIn, checkAuth, device, authNotice, serverUnreachable, markServerReachable, changeServer } = usePOS();
@@ -125,242 +156,163 @@ export const TerminalLockScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.brandRow}>
-          <View style={styles.iconCircle}>
-            <MaterialCommunityIcons name="fire" size={28} color={COLORS.gold} />
-          </View>
-          <Text style={styles.brandTitle}>LAYALI</Text>
+        <View style={styles.brand}>
+          <LogoMark />
         </View>
 
         {!selected ? (
-          <>
-            <Text style={styles.heading}>Who's signing in?</Text>
-            {authNotice && !staffError ? <Text style={styles.notice}>{authNotice}</Text> : null}
+          <View style={styles.column}>
+            <AppText variant="title" style={styles.center}>
+              Who's signing in?
+            </AppText>
+            {authNotice && !staffError ? <Banner tone="info" text={authNotice} /> : null}
 
             {staffLoading ? (
-              <ActivityIndicator style={{ marginTop: 32 }} color={COLORS.gold} />
+              <ActivityIndicator style={styles.loading} color={COLORS.gold} />
             ) : staffError ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorBoxText}>{staffError.message}</Text>
-                <TouchableOpacity style={styles.secondaryBtn} onPress={retry} accessibilityRole="button">
-                  <Feather name="refresh-cw" size={16} color={COLORS.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Retry</Text>
-                </TouchableOpacity>
+              <View style={styles.stack}>
+                <Banner tone="danger" text={staffError.message} />
+                <Button label="Retry" variant="secondary" icon="refresh-cw" onPress={retry} fullWidth testID="staff-retry" />
                 {canChangeServer ? (
-                  <TouchableOpacity
-                    style={styles.secondaryBtn}
+                  <Button
+                    label="Change server address"
+                    variant="ghost"
+                    icon="server"
                     onPress={confirmChangeServer}
-                    accessibilityRole="button"
-                  >
-                    <Feather name="server" size={16} color={COLORS.textPrimary} />
-                    <Text style={styles.secondaryBtnText}>Change server address</Text>
-                  </TouchableOpacity>
+                    fullWidth
+                    testID="change-server"
+                  />
                 ) : null}
               </View>
             ) : staff.length === 0 ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.emptyText}>
-                  No staff can sign in yet. The owner adds staff and their PINs in the web app.
-                </Text>
-                <TouchableOpacity style={styles.secondaryBtn} onPress={loadStaff}>
-                  <Feather name="refresh-cw" size={16} color={COLORS.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Refresh</Text>
-                </TouchableOpacity>
+              <View style={styles.stack}>
+                <EmptyState icon="users" title="No staff yet" hint="The owner adds staff and their PINs in the web app." />
+                <Button label="Refresh" variant="secondary" icon="refresh-cw" onPress={loadStaff} fullWidth />
               </View>
             ) : (
               <View style={styles.staffGrid}>
                 {staff.map((user) => (
-                  <TouchableOpacity
+                  <Pressable
                     key={user.id}
-                    style={styles.staffTile}
+                    style={({ pressed }) => [styles.staffCard, pressed && styles.staffCardPressed]}
                     onPress={() => chooseStaff(user)}
-                    activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={`Sign in as ${user.name}`}
+                    testID={`staff-${user.name}`}
                   >
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{user.name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.staffName} numberOfLines={1}>
+                    <Avatar name={user.name} />
+                    <View style={styles.flex}>
+                      <AppText variant="bodyStrong" numberOfLines={1}>
                         {user.name}
-                      </Text>
-                      <Text style={styles.staffRole} numberOfLines={1}>
+                      </AppText>
+                      <AppText variant="caption" tone="muted" numberOfLines={1}>
                         {roleLabel(user.role)}
-                      </Text>
+                      </AppText>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 ))}
               </View>
             )}
-          </>
+          </View>
         ) : (
-          <View style={styles.pinArea}>
+          <View style={[styles.column, styles.pinColumn]}>
             <View style={styles.selectedRow}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{selected.name.charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.staffName} numberOfLines={1}>
+              <Avatar name={selected.name} />
+              <View style={styles.flex}>
+                <AppText variant="bodyStrong" numberOfLines={1}>
                   {selected.name}
-                </Text>
-                <Text style={styles.staffRole}>{roleLabel(selected.role)}</Text>
+                </AppText>
+                <AppText variant="caption" tone="muted" numberOfLines={1}>
+                  {roleLabel(selected.role)}
+                </AppText>
               </View>
-              <TouchableOpacity style={styles.changeBtn} onPress={backToNames} disabled={submitting}>
-                <Text style={styles.changeBtnText}>Change</Text>
-              </TouchableOpacity>
+              <Button label="Change" variant="ghost" onPress={backToNames} disabled={submitting} testID="change-staff" />
             </View>
 
-            <Text style={styles.pinLabel}>Enter your PIN</Text>
+            <AppText variant="body" tone="secondary" style={styles.center}>
+              Enter your PIN
+            </AppText>
             <View style={styles.dotsRow} accessibilityLabel={`${pin.length} digits entered`}>
               {Array.from({ length: dotCount }).map((_, idx) => (
-                <View
-                  key={idx}
-                  style={[styles.dot, pin.length > idx && styles.dotFilled, !!error && styles.dotError]}
-                />
+                <View key={idx} style={[styles.dot, pin.length > idx && styles.dotFilled, !!error && styles.dotError]} />
               ))}
             </View>
-            <Text style={styles.errorText}>{error ?? ' '}</Text>
+            <AppText variant="body" tone="danger" style={[styles.center, styles.error]} accessibilityLiveRegion="polite">
+              {error ?? ' '}
+            </AppText>
 
             <View style={styles.keypad}>
               {KEY_ROWS.map((row, rIdx) => (
                 <View key={rIdx} style={styles.keypadRow}>
                   {row.map((d) => (
-                    <TouchableOpacity
-                      key={d}
-                      style={styles.keyBtn}
-                      onPress={() => pressDigit(d)}
-                      disabled={submitting}
-                      accessibilityLabel={d}
-                    >
-                      <Text style={styles.keyDigit}>{d}</Text>
-                    </TouchableOpacity>
+                    <Key key={d} label={d} onPress={() => pressDigit(d)} disabled={submitting}>
+                      <AppText variant="display">{d}</AppText>
+                    </Key>
                   ))}
                 </View>
               ))}
               <View style={styles.keypadRow}>
-                <TouchableOpacity
-                  style={styles.keyBtnAux}
-                  onPress={pressClear}
-                  disabled={submitting}
-                  accessibilityLabel="Clear"
-                >
-                  <Text style={styles.keyAuxText}>Clear</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.keyBtn}
-                  onPress={() => pressDigit('0')}
-                  disabled={submitting}
-                  accessibilityLabel="0"
-                >
-                  <Text style={styles.keyDigit}>0</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.keyBtnAux}
-                  onPress={pressDelete}
-                  disabled={submitting}
-                  accessibilityLabel="Delete"
-                >
-                  <Feather name="delete" size={22} color={COLORS.textSecondary} />
-                </TouchableOpacity>
+                <Key label="Clear" onPress={pressClear} disabled={submitting} quiet>
+                  <AppText variant="bodyStrong" tone="secondary">
+                    Clear
+                  </AppText>
+                </Key>
+                <Key label="0" onPress={() => pressDigit('0')} disabled={submitting}>
+                  <AppText variant="display">0</AppText>
+                </Key>
+                <Key label="Delete" onPress={pressDelete} disabled={submitting} quiet>
+                  <Feather name="delete" size={24} color={COLORS.textSecondary} />
+                </Key>
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.unlockBtn, !canSubmit && styles.unlockBtnDisabled]}
+            <Button
+              label={cooldown.active ? `Try again in ${cooldown.secondsLeft}s` : 'Unlock'}
+              icon={cooldown.active ? undefined : 'unlock'}
+              size="lg"
               onPress={submit}
               disabled={!canSubmit}
-              accessibilityRole="button"
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : cooldown.active ? (
-                <Text style={styles.unlockText}>Try again in {cooldown.secondsLeft}s</Text>
-              ) : (
-                <>
-                  <Feather name="unlock" size={18} color="#ffffff" />
-                  <Text style={styles.unlockText}>Unlock</Text>
-                </>
-              )}
-            </TouchableOpacity>
+              loading={submitting}
+              fullWidth
+              style={styles.unlock}
+              testID="unlock"
+            />
           </View>
         )}
       </ScrollView>
 
-      <Text style={styles.deviceName} numberOfLines={1}>
+      <AppText variant="caption" tone="muted" numberOfLines={1} style={styles.deviceName}>
         {device ? device.name : ' '}
-      </Text>
+      </AppText>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.bgPrimary,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 32,
-    paddingBottom: 16,
-  },
-  brandRow: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.goldSubtle,
-    borderWidth: 2,
-    borderColor: COLORS.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  brandTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: 4,
-  },
-  heading: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  notice: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  staffGrid: {
-    width: '100%',
-    maxWidth: 480,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 12,
-    marginTop: 8,
-  },
-  staffTile: {
+  container: { flex: 1, backgroundColor: COLORS.bgPrimary },
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingHorizontal: SPACE.xl, paddingTop: SPACE.xxl, paddingBottom: SPACE.lg },
+  brand: { marginBottom: SPACE.lg },
+  column: { width: '100%', maxWidth: 480, gap: SPACE.md },
+  pinColumn: { maxWidth: 360, alignItems: 'center' },
+  stack: { gap: SPACE.md },
+  center: { textAlign: 'center' },
+  flex: { flex: 1 },
+  loading: { marginTop: SPACE.xxxl },
+  staffGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: SPACE.md },
+  staffCard: {
     width: '48.5%',
     minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: SPACE.md,
     backgroundColor: COLORS.bgCard,
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACE.md,
+    paddingVertical: SPACE.sm,
   },
+  staffCardPressed: { backgroundColor: COLORS.bgSurface },
   avatar: {
     width: 40,
     height: 40,
@@ -369,175 +321,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    color: COLORS.gold,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  staffName: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  staffRole: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  errorBox: {
-    width: '100%',
-    maxWidth: 380,
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 24,
-  },
-  errorBoxText: {
-    color: '#f87171',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  emptyText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  secondaryBtn: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: COLORS.bgSurface,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-  },
-  secondaryBtnText: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  pinArea: {
-    width: '100%',
-    maxWidth: 360,
-    alignItems: 'center',
-  },
   selectedRow: {
-    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: SPACE.md,
     backgroundColor: COLORS.bgCard,
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
-    borderRadius: 14,
-    paddingLeft: 12,
-    paddingVertical: 8,
-    marginBottom: 20,
+    borderRadius: RADIUS.lg,
+    paddingLeft: SPACE.md,
+    paddingRight: SPACE.xs,
+    paddingVertical: SPACE.sm,
+    marginBottom: SPACE.sm,
   },
-  changeBtn: {
-    minHeight: 48,
-    minWidth: 48,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  changeBtnText: {
-    color: COLORS.gold,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  pinLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 14,
-    marginTop: 14,
-  },
-  dot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 1.5,
-    borderColor: COLORS.textMuted,
-  },
-  dotFilled: {
-    borderColor: COLORS.gold,
-    backgroundColor: COLORS.gold,
-  },
-  dotError: {
-    borderColor: '#ef4444',
-  },
-  errorText: {
-    color: '#f87171',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    minHeight: 20,
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  keypad: {
-    gap: 12,
-  },
-  keypadRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-  },
-  keyBtn: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+  dotsRow: { flexDirection: 'row', gap: SPACE.lg },
+  dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: COLORS.textMuted },
+  dotFilled: { borderColor: COLORS.gold, backgroundColor: COLORS.gold },
+  dotError: { borderColor: COLORS.danger },
+  error: { minHeight: 21 },
+  keypad: { gap: SPACE.md },
+  keypadRow: { flexDirection: 'row', justifyContent: 'center', gap: SPACE.xl },
+  key: {
+    width: KEY_SIZE,
+    height: KEY_SIZE,
+    borderRadius: KEY_SIZE / 2,
     backgroundColor: COLORS.bgSurface,
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keyDigit: {
-    color: COLORS.textPrimary,
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  keyBtnAux: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  keyAuxText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  unlockBtn: {
-    width: '100%',
-    minHeight: 52,
-    marginTop: 20,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  unlockBtnDisabled: {
-    opacity: 0.4,
-  },
-  unlockText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  deviceName: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
+  keyQuiet: { backgroundColor: 'transparent', borderColor: 'transparent' },
+  keyPressed: { backgroundColor: COLORS.borderDefault },
+  unlock: { marginTop: SPACE.md, alignSelf: 'stretch' },
+  deviceName: { textAlign: 'center', paddingVertical: SPACE.sm, paddingHorizontal: SPACE.lg },
 });

@@ -1,18 +1,8 @@
-import React, { useState } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  Modal,
-  TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '../constants/theme';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, TextInput, Alert } from 'react-native';
+import { COLORS, RADIUS, SPACE, TOUCH, TYPE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
-import { PrivacyCover } from './PrivacyCover';
+import { AppText, Banner, Button, OptionRow, SectionLabel, Sheet, SheetActions } from '../ui';
 
 interface VoidOrderModalProps {
   visible: boolean;
@@ -22,12 +12,13 @@ interface VoidOrderModalProps {
   onSuccess: () => void;
 }
 
+// `value` is what the server stores; `label` is what staff see
 const VOID_REASONS = [
-  'Guest Walkout / Left without notice',
-  'Accidental Order Creation',
-  'Customer Dissatisfaction / Food Returned',
-  'VIP Space Booking Cancelled',
-  'Manager Special Void',
+  { value: 'Guest Walkout / Left without notice', label: 'Guest walked out' },
+  { value: 'Accidental Order Creation', label: 'Opened by mistake' },
+  { value: 'Customer Dissatisfaction / Food Returned', label: 'Guest unhappy, food returned' },
+  { value: 'VIP Space Booking Cancelled', label: 'Booking cancelled' },
+  { value: 'Manager Special Void', label: 'Manager decision' },
 ];
 
 export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
@@ -37,13 +28,18 @@ export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { voidOrder, can, markActivity } = usePOS();
-  const [selectedReason, setSelectedReason] = useState<string>(VOID_REASONS[0]);
+  const { voidOrder, can } = usePOS();
+  const [selectedReason, setSelectedReason] = useState<string>(VOID_REASONS[0].value);
   const [pin, setPin] = useState<string>('');
   const [isVoiding, setIsVoiding] = useState<boolean>(false);
 
   // Staff without void rights need a manager to approve on this phone
   const needsManagerPin = !can('order.void');
+
+  // A manager's PIN never carries over to the next opening
+  useEffect(() => {
+    setPin('');
+  }, [visible]);
 
   const close = () => {
     setPin('');
@@ -62,224 +58,92 @@ export const VoidOrderModal: React.FC<VoidOrderModalProps> = ({
     setPin('');
 
     if (res.success) {
-      Alert.alert(
-        'Order Voided',
-        `Active order for Table ${tableName} has been voided. All kitchen tickets cancelled and table is now VACANT.`
-      );
+      Alert.alert('Order cancelled', `${tableName} is free and its open tickets are cancelled.`);
       onSuccess();
       onClose();
     } else if (res.status === 409) {
       Alert.alert('Bill already closed', res.error || 'This bill is already closed.');
       onSuccess();
       onClose();
+    } else if (res.uncertain) {
+      Alert.alert('Not confirmed yet', res.error || 'Check the table before trying again.');
     } else {
-      Alert.alert('Void Failed', res.error || 'Failed to void order.');
+      Alert.alert("Couldn't cancel order", res.error || 'Failed to void order.');
     }
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-      <View style={styles.modalOverlay} onTouchStart={markActivity}>
-        <View style={styles.modalCard}>
-          <View style={styles.headerRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <MaterialCommunityIcons name="cancel" size={22} color="#ef4444" />
-              <Text style={styles.modalTitle}>Cancel Order / Walkout</Text>
-            </View>
-            <TouchableOpacity onPress={close} style={styles.closeBtn} accessibilityLabel="Close">
-              <Feather name="x" size={20} color={COLORS.textMuted} />
-            </TouchableOpacity>
-          </View>
+    <Sheet
+      visible={visible}
+      title="Cancel whole order"
+      subtitle={tableName}
+      onClose={close}
+      footer={
+        <SheetActions>
+          <Button label="Keep order" variant="secondary" onPress={close} disabled={isVoiding} />
+          <Button
+            label="Cancel order"
+            variant="danger"
+            onPress={handleExecute}
+            loading={isVoiding}
+            style={styles.grow}
+            testID="confirm-void-order"
+          />
+        </SheetActions>
+      }
+    >
+      <Banner tone="warning" text={`All open tickets for ${tableName} are cancelled and the table is freed.`} />
 
-          <View style={styles.warningBox}>
-            <Text style={styles.warningText}>
-              ⚠️ Warning: This will cancel all active kitchen and shisha tickets for Table {tableName}, mark the order VOIDED in audit history, and free the table to VACANT.
-            </Text>
-          </View>
-
-          <Text style={styles.fieldLabel}>Cancellation Reason:</Text>
-          <View style={styles.reasonList}>
-            {VOID_REASONS.map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[
-                  styles.reasonChip,
-                  selectedReason === r && styles.reasonChipActive,
-                ]}
-                onPress={() => setSelectedReason(r)}
-              >
-                <Text
-                  style={[
-                    styles.reasonText,
-                    selectedReason === r && styles.reasonTextActive,
-                  ]}
-                >
-                  {r}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {needsManagerPin ? (
-            <>
-              <Text style={styles.fieldLabel}>Manager PIN (required)</Text>
-              <TextInput
-                style={styles.pinInput}
-                value={pin}
-                onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Manager PIN"
-                placeholderTextColor={COLORS.textMuted}
-                keyboardType="number-pad"
-                maxLength={6}
-                secureTextEntry
-              />
-            </>
-          ) : null}
-
-          <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={close} disabled={isVoiding}>
-              <Text style={styles.cancelText}>Keep Order</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.confirmBtn, isVoiding && { opacity: 0.6 }]}
-              onPress={handleExecute}
-              disabled={isVoiding}
-            >
-              {isVoiding ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <Text style={styles.confirmText}>Confirm Full Void</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-        <PrivacyCover />
+      <View style={styles.list} accessibilityRole="radiogroup">
+        <SectionLabel style={styles.flushLabel}>Reason</SectionLabel>
+        {VOID_REASONS.map((r) => (
+          <OptionRow
+            key={r.value}
+            title={r.label}
+            selected={selectedReason === r.value}
+            onPress={() => setSelectedReason(r.value)}
+          />
+        ))}
       </View>
-    </Modal>
+
+      {needsManagerPin ? (
+        <View>
+          <SectionLabel>Manager PIN</SectionLabel>
+          <TextInput
+            style={styles.pinInput}
+            value={pin}
+            onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))}
+            placeholder="4–6 digits"
+            placeholderTextColor={COLORS.textMuted}
+            keyboardType="number-pad"
+            maxLength={6}
+            secureTextEntry
+            accessibilityLabel="Manager PIN"
+            testID="void-order-pin"
+          />
+          <AppText variant="caption" tone="muted" style={styles.hint}>
+            A manager must approve this cancellation.
+          </AppText>
+        </View>
+      ) : null}
+    </Sheet>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.5)',
-    padding: 18,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  modalTitle: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  warningBox: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    borderRadius: 10,
-    padding: 10,
-    marginVertical: 12,
-  },
-  warningText: {
-    color: '#fca5a5',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  fieldLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  reasonList: {
-    gap: 6,
-    marginBottom: 12,
-  },
-  reasonChip: {
-    backgroundColor: COLORS.bgSurface,
-    minHeight: 48,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-  },
-  reasonChipActive: {
-    borderColor: '#ef4444',
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-  },
-  reasonText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  reasonTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
+  grow: { flex: 1 },
+  list: { gap: SPACE.sm },
+  flushLabel: { marginBottom: 0 },
   pinInput: {
-    backgroundColor: COLORS.bgPrimary,
-    borderRadius: 10,
+    minHeight: TOUCH.min,
+    paddingHorizontal: SPACE.lg,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
-    paddingHorizontal: 12,
-    minHeight: 48,
-    color: '#ffffff',
-    fontSize: 18,
+    backgroundColor: COLORS.bgInput,
+    color: COLORS.textPrimary,
+    fontSize: TYPE.heading.fontSize,
     letterSpacing: 6,
-    textAlign: 'center',
-    marginBottom: 16,
   },
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-  },
-  closeBtn: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -12,
-  },
-  cancelBtn: {
-    minHeight: 48,
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: COLORS.bgSurface,
-  },
-  cancelText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  confirmBtn: {
-    minHeight: 48,
-    backgroundColor: '#dc2626',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
+  hint: { marginTop: SPACE.xs },
 });

@@ -32,7 +32,7 @@ interface OrderScreenProps {
   onOrderSuccess: (message: string) => void;
 }
 
-type View_ = 'menu' | 'running';
+type OrderView = 'menu' | 'running';
 
 export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
   const {
@@ -58,7 +58,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
   const canStock = can('menu.stock');
 
   // Menu vs items already sent for this table
-  const [activeTab, setActiveTab] = useState<View_>('menu');
+  const [activeTab, setActiveTab] = useState<OrderView>('menu');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [is86ManagerMode, setIs86ManagerMode] = useState<boolean>(false);
@@ -153,7 +153,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         {actionTiles.length > 0 ? <View style={styles.tiles}>{actionTiles}</View> : null}
 
         {activeOrder ? (
-          <Segmented<View_>
+          <Segmented<OrderView>
             value={showRunning ? 'running' : 'menu'}
             onChange={setActiveTab}
             options={[
@@ -256,7 +256,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
                 testID="menu-search"
               />
               {searchQuery ? (
-                <IconButton icon="x" label="Clear search" tone="muted" onPress={() => setSearchQuery('')} testID="menu-search-clear" style={styles.clearBtn} />
+                <IconButton icon="x" label="Clear search" tone="muted" onPress={() => setSearchQuery('')} testID="menu-search-clear" />
               ) : null}
             </View>
             {canStock ? (
@@ -423,7 +423,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.borderDefault,
   },
   searchInput: { ...TYPE.body, flex: 1, minHeight: TOUCH.min, color: COLORS.textPrimary, paddingVertical: 0 },
-  clearBtn: { width: 44, height: 44 },
   categories: { paddingVertical: SPACE.sm },
   banner: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm },
   list: { gap: SPACE.sm, paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs, paddingBottom: SPACE.xxl },
@@ -443,11 +442,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.borderSubtle,
   },
   orderedInfo: { gap: SPACE.xs },
-  orderedRight: { alignItems: 'flex-end', gap: SPACE.xs, paddingRight: SPACE.sm },
+  orderedRight: { alignItems: 'flex-end', gap: SPACE.xs },
   voided: { opacity: 0.7 },
   strike: { textDecorationLine: 'line-through' },
   badges: { flexDirection: 'row', gap: SPACE.xs, flexWrap: 'wrap' },
-  voidBtn: { paddingHorizontal: SPACE.md, marginRight: -SPACE.sm },
+  voidBtn: { paddingHorizontal: SPACE.md },
   footer: {
     paddingHorizontal: SPACE.lg,
     paddingVertical: SPACE.md,
