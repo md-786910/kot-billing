@@ -48,12 +48,7 @@ export const ShishaCard: React.FC<ShishaCardProps> = ({ pot, now, onExtend, exte
         <Badge label={state.label} fg={state.fg} bg={state.bg} />
       </View>
 
-      <AppText
-        variant="display"
-        tone={left > 0 ? 'primary' : 'danger'}
-        money
-        style={styles.time}
-      >
+      <AppText variant="display" tone={left > 0 ? 'primary' : 'danger'} money style={styles.time}>
         {timeText}
       </AppText>
 

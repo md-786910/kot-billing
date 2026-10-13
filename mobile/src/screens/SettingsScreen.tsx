@@ -1,26 +1,42 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { MaterialCommunityIcons, Ionicons, Feather } from '@expo/vector-icons';
-import { COLORS, roleLabel, SERVER_URL_PLACEHOLDER } from '../constants/theme';
+import { StyleSheet, View, ScrollView, TextInput, Alert } from 'react-native';
+import { COLORS, RADIUS, SPACE, TOUCH, TYPE, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
-import { normalizeServerUrl } from '../services/api';
+import { AppText, Banner, Button, Card } from '../ui';
 
 const PIN_PATTERN = /^\d{4,6}$/;
 const digitsOnly = (t: string) => t.replace(/\D/g, '').slice(0, 6);
 
+/** Labelled numeric PIN field */
+const PinField: React.FC<{
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  editable: boolean;
+  testID: string;
+}> = ({ label, value, onChange, editable, testID }) => (
+  <View style={styles.field}>
+    <AppText variant="label" tone="secondary">
+      {label}
+    </AppText>
+    <TextInput
+      style={styles.input}
+      value={value}
+      onChangeText={(t) => onChange(digitsOnly(t))}
+      placeholder="••••"
+      placeholderTextColor={COLORS.textMuted}
+      keyboardType="number-pad"
+      maxLength={6}
+      secureTextEntry
+      editable={editable}
+      accessibilityLabel={label}
+      testID={testID}
+    />
+  </View>
+);
+
 export const SettingsScreen: React.FC = () => {
-  const {
-    currentStaff,
-    device,
-    serverUrl,
-    changeServer,
-    isConnected,
-    pingStats,
-    runPingTest,
-    changePin,
-    lock,
-    unpair,
-  } = usePOS();
+  const { currentStaff, device, serverUrl, changeServer, isConnected, pingStats, runPingTest, changePin, lock, unpair } = usePOS();
 
   // Change PIN
   const [currentPin, setCurrentPin] = useState('');
@@ -30,7 +46,6 @@ export const SettingsScreen: React.FC = () => {
   const [pinFeedback, setPinFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Server
-  const [urlInput, setUrlInput] = useState(serverUrl);
   const [isTestingPing, setIsTestingPing] = useState(false);
 
   // Device
@@ -75,433 +90,148 @@ export const SettingsScreen: React.FC = () => {
     setIsTestingPing(false);
   };
 
-  const handleSaveServer = () => {
-    const next = normalizeServerUrl(urlInput);
-    if (!next) {
-      Alert.alert('Server address', 'Enter the server address.');
-      return;
-    }
-    if (next === serverUrl) {
-      setUrlInput(next);
-      return;
-    }
+  // The new address is entered on the pairing screen, together with a new pairing code
+  const handleChangeServer = () => {
     Alert.alert(
       'Change server address?',
       'This phone will be unpaired and signed out. You will need a new pairing code from Staff & Devices.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer(next) },
+        { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer() },
       ]
     );
   };
 
   const handleUnpair = () => {
-    Alert.alert(
-      'Unpair this phone?',
-      'Nobody can sign in on it until an admin creates a new pairing code in Staff & Devices.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unpair',
-          style: 'destructive',
-          onPress: async () => {
-            setIsUnpairing(true);
-            const res = await unpair();
-            // On success the app switches to the pairing screen
-            if (!res.success) Alert.alert('Unpaired on this phone', res.error || '');
-          },
+    Alert.alert('Unpair this phone?', 'Nobody can sign in on it until an admin creates a new pairing code in Staff & Devices.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Unpair',
+        style: 'destructive',
+        onPress: async () => {
+          setIsUnpairing(true);
+          const res = await unpair();
+          // On success the app switches to the pairing screen
+          if (!res.success) Alert.alert('Unpaired on this phone', res.error || '');
         },
-      ]
-    );
+      },
+    ]);
   };
 
   if (!currentStaff) return null;
 
-  const urlChanged = normalizeServerUrl(urlInput) !== serverUrl;
+  const latency = pingStats ? (pingStats.message === 'Connected' ? `${pingStats.latencyMs} ms` : 'No response') : null;
 
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
     >
       {/* Signed-in staff */}
-      <View style={styles.card}>
-        <View style={styles.profileHeader}>
+      <Card style={styles.card}>
+        <View style={styles.profile}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{currentStaff.name.charAt(0).toUpperCase()}</Text>
+            <AppText variant="title" tone="gold">
+              {currentStaff.name.charAt(0).toUpperCase()}
+            </AppText>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.staffName} numberOfLines={1}>
+          <View style={styles.flex}>
+            <AppText variant="heading" numberOfLines={1}>
               {currentStaff.name}
-            </Text>
-            <Text style={styles.staffMeta}>{roleLabel(currentStaff.role)}</Text>
+            </AppText>
+            <AppText variant="caption" tone="secondary" numberOfLines={1}>
+              {roleLabel(currentStaff.role)}
+            </AppText>
           </View>
         </View>
-
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => lock()} accessibilityRole="button">
-          <Feather name="lock" size={18} color="#ffffff" />
-          <Text style={styles.primaryBtnText}>Lock / Switch staff</Text>
-        </TouchableOpacity>
-        <Text style={styles.hint}>The next person picks their name and enters their own PIN.</Text>
-      </View>
+        <Button label="Lock / switch staff" icon="lock" onPress={() => lock()} fullWidth testID="settings-lock" />
+      </Card>
 
       {/* Change PIN */}
-      <View style={styles.card}>
-        <View style={styles.cardTitleRow}>
-          <MaterialCommunityIcons name="shield-key-outline" size={20} color={COLORS.gold} />
-          <Text style={styles.cardTitle}>Change PIN</Text>
-        </View>
-
-        {pinFeedback && (
-          <View style={[styles.feedbackBanner, pinFeedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError]}>
-            <Feather
-              name={pinFeedback.type === 'success' ? 'check-circle' : 'alert-circle'}
-              size={16}
-              color={pinFeedback.type === 'success' ? '#34d399' : '#f87171'}
-            />
-            <Text style={[styles.feedbackText, { color: pinFeedback.type === 'success' ? '#34d399' : '#f87171' }]}>
-              {pinFeedback.message}
-            </Text>
-          </View>
-        )}
-
-        <Text style={styles.inputLabel}>Current PIN</Text>
-        <TextInput
-          style={styles.pinInput}
-          value={currentPin}
-          onChangeText={(t) => setCurrentPin(digitsOnly(t))}
-          keyboardType="number-pad"
-          maxLength={6}
-          secureTextEntry
-          editable={!isChangingPin}
-        />
-
-        <View style={styles.formRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.inputLabel}>New PIN</Text>
-            <TextInput
-              style={styles.pinInput}
-              value={newPin}
-              onChangeText={(t) => setNewPin(digitsOnly(t))}
-              placeholder="4–6 digits"
-              placeholderTextColor={COLORS.textMuted}
-              keyboardType="number-pad"
-              maxLength={6}
-              secureTextEntry
-              editable={!isChangingPin}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.inputLabel}>Confirm new PIN</Text>
-            <TextInput
-              style={styles.pinInput}
-              value={confirmPin}
-              onChangeText={(t) => setConfirmPin(digitsOnly(t))}
-              keyboardType="number-pad"
-              maxLength={6}
-              secureTextEntry
-              editable={!isChangingPin}
-            />
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.primaryBtn, isChangingPin && styles.btnDisabled]}
-          onPress={handleChangePin}
-          disabled={isChangingPin}
-        >
-          {isChangingPin ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <Text style={styles.primaryBtnText}>Change PIN</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      <Card style={styles.card}>
+        <AppText variant="heading">Change PIN</AppText>
+        {pinFeedback ? <Banner tone={pinFeedback.type === 'success' ? 'success' : 'danger'} text={pinFeedback.message} /> : null}
+        <PinField label="Current PIN" value={currentPin} onChange={setCurrentPin} editable={!isChangingPin} testID="pin-current" />
+        <PinField label="New PIN" value={newPin} onChange={setNewPin} editable={!isChangingPin} testID="pin-new" />
+        <PinField label="Confirm new PIN" value={confirmPin} onChange={setConfirmPin} editable={!isChangingPin} testID="pin-confirm" />
+        <Button label="Change PIN" variant="secondary" onPress={handleChangePin} loading={isChangingPin} fullWidth testID="pin-submit" />
+      </Card>
 
       {/* Server */}
-      <View style={styles.card}>
-        <View style={styles.cardTitleRow}>
-          <Ionicons name="server-outline" size={18} color={COLORS.gold} />
-          <Text style={styles.cardTitle}>Server</Text>
-        </View>
-
+      <Card style={styles.card}>
+        <AppText variant="heading">Server</AppText>
         <View style={styles.statusRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={[styles.statusDot, { backgroundColor: isConnected ? COLORS.vacant : COLORS.occupied }]} />
-            <Text style={styles.statusLabel}>{isConnected ? 'Connected' : 'Offline'}</Text>
-          </View>
-          {pingStats ? (
-            <Text style={styles.pingText}>
-              {pingStats.message === 'Connected' ? `${pingStats.latencyMs} ms` : 'No response'}
-            </Text>
+          <View style={[styles.statusDot, { backgroundColor: isConnected ? COLORS.success : COLORS.danger }]} />
+          <AppText variant="bodyStrong" tone={isConnected ? 'success' : 'danger'}>
+            {isConnected ? 'Connected' : 'Offline'}
+          </AppText>
+          {latency ? (
+            <AppText variant="caption" tone="muted" money>
+              · {latency}
+            </AppText>
           ) : null}
+          <View style={styles.flex} />
+          <Button label="Test" variant="ghost" onPress={handlePingTest} loading={isTestingPing} testID="server-test" />
         </View>
-
-        <Text style={styles.inputLabel}>Server address</Text>
-        <TextInput
-          style={styles.textInput}
-          value={urlInput}
-          onChangeText={setUrlInput}
-          placeholder={SERVER_URL_PLACEHOLDER}
-          placeholderTextColor={COLORS.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-        />
-
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={handlePingTest} disabled={isTestingPing}>
-            {isTestingPing ? (
-              <ActivityIndicator size="small" color={COLORS.gold} />
-            ) : (
-              <Text style={styles.secondaryBtnText}>Test</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.secondaryBtn, { flex: 1 }, !urlChanged && styles.btnDisabled]}
-            onPress={handleSaveServer}
-            disabled={!urlChanged}
-          >
-            <Text style={styles.secondaryBtnText}>Change server</Text>
-          </TouchableOpacity>
+        <View>
+          <AppText variant="label" tone="muted">
+            Address
+          </AppText>
+          <AppText variant="body" tone="secondary" selectable>
+            {serverUrl || 'Not set'}
+          </AppText>
         </View>
-        <Text style={styles.hint}>Changing the address unpairs this phone; pair it again with a new code.</Text>
-      </View>
+        <Button label="Change server" variant="secondary" onPress={handleChangeServer} fullWidth testID="server-change" />
+      </Card>
 
-      {/* This device */}
-      <View style={styles.card}>
-        <View style={styles.cardTitleRow}>
-          <MaterialCommunityIcons name="cellphone" size={20} color={COLORS.gold} />
-          <Text style={styles.cardTitle}>This device</Text>
-        </View>
-        <Text style={styles.deviceName}>{device?.name ?? 'Unknown device'}</Text>
-
-        <TouchableOpacity
-          style={[styles.dangerBtn, isUnpairing && styles.btnDisabled]}
+      {/* This phone */}
+      <Card style={styles.card}>
+        <AppText variant="heading">This phone</AppText>
+        <AppText variant="body" tone="secondary">
+          {device?.name ?? 'Unknown device'}
+        </AppText>
+        <Button
+          label="Unpair this phone"
+          variant="dangerGhost"
           onPress={handleUnpair}
-          disabled={isUnpairing}
-        >
-          {isUnpairing ? (
-            <ActivityIndicator size="small" color="#f87171" />
-          ) : (
-            <Text style={styles.dangerBtnText}>Unpair this device</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.footerText}>Layali POS Mobile</Text>
+          loading={isUnpairing}
+          fullWidth
+          testID="device-unpair"
+        />
+      </Card>
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.bgPrimary,
-  },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 40,
-    gap: 16,
-  },
-  card: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-    padding: 16,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    marginBottom: 16,
-  },
+  container: { flex: 1, backgroundColor: COLORS.bgPrimary },
+  content: { padding: SPACE.lg, paddingBottom: SPACE.xxxl, gap: SPACE.lg },
+  card: { gap: SPACE.md },
+  flex: { flex: 1 },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md },
   avatar: {
     width: 52,
     height: 52,
     borderRadius: 26,
     backgroundColor: COLORS.goldSubtle,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: COLORS.gold,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    color: COLORS.gold,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  staffName: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  staffMeta: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    marginTop: 2,
-  },
-  hint: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    marginTop: 8,
-  },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
-  },
-  cardTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  feedbackBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  feedbackSuccess: {
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-  },
-  feedbackError: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-  },
-  feedbackText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  formRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  inputLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  pinInput: {
-    minHeight: 48,
-    backgroundColor: COLORS.bgPrimary,
-    borderRadius: 12,
+  field: { gap: SPACE.xs },
+  input: {
+    height: TOUCH.min,
+    backgroundColor: COLORS.bgInput,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
-    paddingHorizontal: 12,
+    paddingHorizontal: SPACE.md,
     color: COLORS.textPrimary,
-    fontSize: 18,
-    letterSpacing: 4,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 12,
+    fontSize: TYPE.body.fontSize,
   },
-  textInput: {
-    minHeight: 48,
-    backgroundColor: COLORS.bgPrimary,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-    paddingHorizontal: 12,
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    marginBottom: 12,
-  },
-  primaryBtn: {
-    minHeight: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-  },
-  primaryBtnText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  secondaryBtn: {
-    minHeight: 48,
-    minWidth: 96,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    backgroundColor: COLORS.bgSurface,
-    borderWidth: 1,
-    borderColor: COLORS.borderDefault,
-    borderRadius: 12,
-  },
-  secondaryBtnText: {
-    color: COLORS.gold,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  btnDisabled: {
-    opacity: 0.45,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.bgSurface,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    marginBottom: 14,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  statusLabel: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  pingText: {
-    color: COLORS.gold,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  deviceName: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
-    marginBottom: 14,
-  },
-  dangerBtn: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.5)',
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-  },
-  dangerBtnText: {
-    color: '#f87171',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  footerText: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 4,
-  },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
 });

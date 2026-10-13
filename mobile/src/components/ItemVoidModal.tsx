@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, View, TextInput, Alert } from 'react-native';
 import { COLORS, RADIUS, SPACE, TOUCH, TYPE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
@@ -43,9 +43,11 @@ export const ItemVoidModal: React.FC<ItemVoidModalProps> = ({
   const needsManagerPin = !can('order.void');
 
   // A manager's PIN never carries over to the next opening
-  useEffect(() => {
+  const [shownFor, setShownFor] = useState(visible);
+  if (shownFor !== visible) {
+    setShownFor(visible);
     setPin('');
-  }, [visible]);
+  }
 
   const close = () => {
     setPin('');

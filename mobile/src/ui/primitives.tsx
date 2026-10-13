@@ -218,6 +218,7 @@ export function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
       onPress={onPress}
+      hitSlop={4}
       style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && !selected && { backgroundColor: COLORS.borderDefault }]}
     >
       <AppText variant="label" style={{ color: selected ? COLORS.bgPrimary : COLORS.textSecondary }}>
@@ -458,7 +459,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.borderSubtle,
   },
   chip: {
-    minHeight: 40,
+    minHeight: 44, // + 4dp hit slop on each side = 52dp touch target
     paddingHorizontal: SPACE.lg,
     borderRadius: RADIUS.full,
     alignItems: 'center',

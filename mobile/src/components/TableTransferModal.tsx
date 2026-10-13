@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, View, TextInput, Alert } from 'react-native';
 import { COLORS, RADIUS, SPACE, TOUCH, TYPE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
@@ -43,10 +43,12 @@ export const TableTransferModal: React.FC<TableTransferModalProps> = ({
   const [reason, setReason] = useState<string>('');
 
   // Start every opening with nothing picked
-  useEffect(() => {
+  const [shownFor, setShownFor] = useState(visible);
+  if (shownFor !== visible) {
+    setShownFor(visible);
     setSelectedToTable('');
     setReason('');
-  }, [visible]);
+  }
 
   // A picked table that has since filled up no longer counts as picked
   const picked = vacantTables.some((t) => t.name === selectedToTable) ? selectedToTable : '';

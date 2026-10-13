@@ -23,6 +23,12 @@ export async function GET(req: NextRequest) {
 
     if (status === 'ACTIVE_ALL') {
       filter.status = { $ne: 'SERVED' };
+    } else if (status === 'RECENT') {
+      // Open tickets plus anything finished in the last 3 hours (phone "Done" view)
+      filter.$or = [
+        { status: { $in: ['NEW', 'PREPARING', 'READY'] } },
+        { createdAt: { $gte: new Date(Date.now() - 3 * 3600_000) } },
+      ];
     } else if (status && status !== 'All') {
       filter.status = status;
     }

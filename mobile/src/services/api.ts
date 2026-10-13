@@ -268,7 +268,7 @@ export async function fetchOrders(): Promise<Order[]> {
 }
 
 export async function fetchKOTs(): Promise<KOT[]> {
-  const json = await request<any[]>('/api/v1/kots?status=ACTIVE_ALL');
+  const json = await request<any[]>('/api/v1/kots?status=RECENT');
   return (json.data ?? []).map((k: any) => ({
     id: k._id || k.kotNumber,
     kotNumber: k.kotNumber,

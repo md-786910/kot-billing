@@ -102,12 +102,7 @@ export const KOTsScreen: React.FC = () => {
         data={visible}
         keyExtractor={(k) => k.id}
         renderItem={({ item }) => (
-          <KOTCard
-            kot={item}
-            now={now}
-            onMarkServed={canServe ? markServed : undefined}
-            serving={servingId === item.id}
-          />
+          <KOTCard kot={item} now={now} onMarkServed={canServe ? markServed : undefined} serving={servingId === item.id} />
         )}
         extraData={`${now}-${servingId}`}
         contentContainerStyle={styles.list}

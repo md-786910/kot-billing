@@ -94,18 +94,13 @@ export const TerminalLockScreen: React.FC = () => {
   };
 
   // Server unreachable, wrong address or failing: offer a way out (re-pair with a new address)
-  const canChangeServer =
-    serverUnreachable || (!!staffError && staffError.status !== 401 && staffError.status !== 429);
+  const canChangeServer = serverUnreachable || (!!staffError && staffError.status !== 401 && staffError.status !== 429);
 
   const confirmChangeServer = () => {
-    Alert.alert(
-      'Change server address?',
-      'This phone will be unpaired. You will need a new pairing code from Staff & Devices.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer() },
-      ]
-    );
+    Alert.alert('Change server address?', 'This phone will be unpaired. You will need a new pairing code from Staff & Devices.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer() },
+    ]);
   };
 
   // Functional updates so quick taps never drop digits
@@ -163,7 +158,7 @@ export const TerminalLockScreen: React.FC = () => {
         {!selected ? (
           <View style={styles.column}>
             <AppText variant="title" style={styles.center}>
-              Who's signing in?
+              {"Who's signing in?"}
             </AppText>
             {authNotice && !staffError ? <Banner tone="info" text={authNotice} /> : null}
 

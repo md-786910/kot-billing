@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, View, Alert } from 'react-native';
 import { SPACE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
@@ -42,9 +42,11 @@ export const TableMergeModal: React.FC<TableMergeModalProps> = ({
   const [targetTable, setTargetTable] = useState<string>('');
 
   // Start every opening with nothing picked
-  useEffect(() => {
+  const [shownFor, setShownFor] = useState(visible);
+  if (shownFor !== visible) {
+    setShownFor(visible);
     setTargetTable('');
-  }, [visible]);
+  }
 
   // A picked table whose bill has since closed no longer counts as picked
   const picked = occupiedTables.some((t) => t.name === targetTable) ? targetTable : '';

@@ -55,12 +55,7 @@ export const ShishaScreen: React.FC = () => {
         data={pots}
         keyExtractor={(k) => k.id}
         renderItem={({ item }) => (
-          <ShishaCard
-            pot={item}
-            now={now}
-            onExtend={canExtend ? handleExtend : undefined}
-            extending={extendingId === item.id}
-          />
+          <ShishaCard pot={item} now={now} onExtend={canExtend ? handleExtend : undefined} extending={extendingId === item.id} />
         )}
         extraData={`${now}-${extendingId}`}
         contentContainerStyle={styles.list}
