@@ -1,15 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  TextInput,
-  ScrollView,
-  FlatList,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5, Feather } from '@expo/vector-icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { MenuItemCard } from '../components/MenuItemCard';
 import { StickyCartBar } from '../components/StickyCartBar';
 import { ReviewKOTModal } from '../components/ReviewKOTModal';
@@ -18,19 +9,36 @@ import { TableMergeModal } from '../components/TableMergeModal';
 import { VoidOrderModal } from '../components/VoidOrderModal';
 import { ItemVoidModal } from '../components/ItemVoidModal';
 import { MobileBillingModal } from '../components/MobileBillingModal';
-import { COLORS } from '../constants/theme';
+import { COLORS, RADIUS, SPACE, TOUCH, TYPE, stationColors } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { OrderItem, MenuItem } from '../types';
+import {
+  ActionTile,
+  AppText,
+  Badge,
+  Banner,
+  Button,
+  Chip,
+  ChipRow,
+  EmptyState,
+  IconButton,
+  Segmented,
+  formatElapsed,
+  formatMoney,
+} from '../ui';
 
 interface OrderScreenProps {
   /** Called after a KOT is sent, with a short confirmation for the toast */
   onOrderSuccess: (message: string) => void;
 }
 
+type View_ = 'menu' | 'running';
+
 export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
   const {
     menu,
     categories,
+    tables,
     selectedTable,
     setSelectedTable,
     activeOrder,
@@ -49,8 +57,8 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
   const canMove = can('table.move');
   const canStock = can('menu.stock');
 
-  // Mode: Menu vs Running Items
-  const [activeTab, setActiveTab] = useState<'menu' | 'running'>('menu');
+  // Menu vs items already sent for this table
+  const [activeTab, setActiveTab] = useState<View_>('menu');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [is86ManagerMode, setIs86ManagerMode] = useState<boolean>(false);
@@ -66,6 +74,13 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
   const [showVoidModal, setShowVoidModal] = useState<boolean>(false);
   const [selectedVoidItemIndex, setSelectedVoidItemIndex] = useState<number | null>(null);
   const [selectedVoidItem, setSelectedVoidItem] = useState<OrderItem | null>(null);
+
+  // Keep the "32 min" in the status line current while the screen is open
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const filteredMenu = useMemo(() => {
     return menu.filter((item) => {
@@ -91,244 +106,197 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
     if (res.busy) return;
     if (res.success) {
       Alert.alert(
-        nextAvailability ? 'Restored In Stock' : '86 OUT OF STOCK',
-        `${item.name} is now ${nextAvailability ? 'AVAILABLE' : '86 OUT OF STOCK'}.`
+        nextAvailability ? 'Back in stock' : 'Marked out of stock',
+        `${item.name} is now ${nextAvailability ? 'available' : 'out of stock'}.`
       );
     } else {
-      Alert.alert('Update Failed', res.error || 'Failed to update stock status.');
+      Alert.alert("Couldn't update stock", res.error || 'Failed to update stock status.');
     }
   };
 
+  const showRunning = activeTab === 'running' && !!activeOrder;
+  const liveItemCount = activeOrder ? activeOrder.items.filter((x) => !x.isVoided).length : 0;
+
+  const capacity = tables.find((t) => t.name === selectedTable)?.capacity;
+  const statusLine = activeOrder
+    ? [
+        `#${activeOrder.orderNumber || activeOrder.id.slice(-6).toUpperCase()}`,
+        `${formatMoney(runningTotal)} running`,
+        formatElapsed(activeOrder.createdAt, now),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : capacity
+    ? `Free table · ${capacity} seat${capacity === 1 ? '' : 's'}`
+    : 'Free table';
+
+  const openBilling = () => setShowBillingModal(true);
+  const actionTiles = activeOrder
+    ? [
+        canSettle && <ActionTile key="bill" icon="file-text" label="Bill" onPress={openBilling} testID="action-bill" />,
+        canMove && <ActionTile key="move" icon="shuffle" label="Move" onPress={() => setShowTransferModal(true)} testID="action-move" />,
+        canMove && <ActionTile key="merge" icon="git-merge" label="Merge" onPress={() => setShowMergeModal(true)} testID="action-merge" />,
+        canOrder && (
+          <ActionTile key="void" icon="x-circle" label="Void" tone="danger" onPress={() => setShowCancelOrderModal(true)} testID="action-void" />
+        ),
+      ].filter(Boolean)
+    : [];
+
   return (
     <View style={styles.container}>
-      {/* 1. TABLE BANNER & QUICK ACTIONS */}
-      <View style={styles.orderHeaderBar}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.orderTableLabel}>Selected Table</Text>
-          <Text style={styles.orderTableName}>{selectedTable}</Text>
-          {activeOrder ? (
-            <Text style={styles.runningOrderText}>
-              Running: ₹{runningTotal.toFixed(2)} (#{activeOrder.orderNumber || activeOrder.id.slice(-6).toUpperCase()})
-            </Text>
-          ) : (
-            <Text style={styles.vacantTableText}>● Vacant Table (Ready for Guests)</Text>
-          )}
-        </View>
+      {/* Table status + table actions (the Header already shows the table name) */}
+      <View style={styles.top}>
+        <AppText variant="caption" tone={activeOrder ? 'secondary' : 'muted'} money numberOfLines={1} testID="order-status">
+          {statusLine}
+        </AppText>
 
-        {/* Action Buttons if table is occupied */}
+        {actionTiles.length > 0 ? <View style={styles.tiles}>{actionTiles}</View> : null}
+
         {activeOrder ? (
-          <View style={styles.headerActionsColumn}>
-            {canSettle ? (
-              <TouchableOpacity
-                style={styles.settleBtnHeader}
-                onPress={() => setShowBillingModal(true)}
-                activeOpacity={0.8}
-              >
-                <MaterialCommunityIcons name="receipt" size={14} color="#ffffff" />
-                <Text style={styles.settleBtnHeaderText}>Settle Bill</Text>
-              </TouchableOpacity>
-            ) : null}
-
-            <View style={styles.subActionsRow}>
-              {canMove ? (
-                <TouchableOpacity
-                  style={styles.actionBtnSmall}
-                  onPress={() => setShowTransferModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="swap-horizontal" size={12} color={COLORS.gold} />
-                  <Text style={styles.actionBtnSmallText}>Shift</Text>
-                </TouchableOpacity>
-              ) : null}
-
-              {canMove ? (
-                <TouchableOpacity
-                  style={[styles.actionBtnSmall, { borderColor: '#818cf8' }]}
-                  onPress={() => setShowMergeModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <MaterialCommunityIcons name="call-merge" size={12} color="#818cf8" />
-                  <Text style={[styles.actionBtnSmallText, { color: '#818cf8' }]}>Merge</Text>
-                </TouchableOpacity>
-              ) : null}
-
-              {canOrder ? (
-                <TouchableOpacity
-                  style={[styles.actionBtnSmall, { borderColor: '#ef4444' }]}
-                  onPress={() => setShowCancelOrderModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Feather name="x-circle" size={12} color="#ef4444" />
-                  <Text style={[styles.actionBtnSmallText, { color: '#ef4444' }]}>Void</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          </View>
+          <Segmented<View_>
+            value={showRunning ? 'running' : 'menu'}
+            onChange={setActiveTab}
+            options={[
+              { key: 'menu', label: 'Menu', testID: 'seg-menu' },
+              { key: 'running', label: `Ordered (${liveItemCount})`, testID: 'seg-ordered' },
+            ]}
+          />
         ) : null}
       </View>
 
-      {/* 2. SEGMENTED SWITCH: Menu Catalog vs Running Items */}
-      {activeOrder && activeOrder.items.length > 0 ? (
-        <View style={styles.tabSwitchRow}>
-          <TouchableOpacity
-            style={[styles.tabSwitchBtn, activeTab === 'menu' && styles.tabSwitchBtnActive]}
-            onPress={() => setActiveTab('menu')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabSwitchText, activeTab === 'menu' && styles.tabSwitchTextActive]}>
-              Menu Catalog
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabSwitchBtn, activeTab === 'running' && styles.tabSwitchBtnActive]}
-            onPress={() => setActiveTab('running')}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.tabSwitchText,
-                activeTab === 'running' && styles.tabSwitchTextActive,
-              ]}
-            >
-              Running Items ({activeOrder.items.filter((x) => !x.isVoided).length})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {/* 3. RUNNING ITEMS TAB */}
-      {activeTab === 'running' && activeOrder ? (
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-          <View style={styles.runningListContainer}>
-            {activeOrder.items.map((it, idx) => (
-              <View
-                key={idx}
-                style={[styles.runningItemRow, it.isVoided && styles.runningItemRowVoided]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.runningItemName,
-                      it.isVoided && styles.runningItemNameVoided,
-                    ]}
-                  >
-                    {it.qty}x {it.name}
-                  </Text>
-                  <Text style={styles.runningItemMeta}>
-                    {it.station} · ₹{(it.price * it.qty).toFixed(2)}
-                    {it.isVoided ? ` · VOIDED (${it.voidReason || 'Admin'})` : ''}
-                  </Text>
-                </View>
-
-                {it.isVoided ? (
-                  <View style={styles.voidBadge}>
-                    <Text style={styles.voidBadgeText}>VOID</Text>
+      {showRunning && activeOrder ? (
+        /* Items already sent for this table */
+        <View style={styles.flex}>
+          <ScrollView style={styles.flex} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+            {activeOrder.items.length === 0 ? (
+              <EmptyState icon="clipboard" title="Nothing ordered yet" hint="Items show here once they're sent to the kitchen." />
+            ) : (
+              activeOrder.items.map((it, idx) => {
+                const station = stationColors(it.station);
+                return (
+                  <View key={idx} style={styles.orderedRow} testID={`ordered-item-${idx}`}>
+                    <View style={[styles.flex, styles.orderedInfo, it.isVoided && styles.voided]}>
+                      <AppText variant="bodyStrong" tone={it.isVoided ? 'muted' : 'primary'} style={it.isVoided && styles.strike}>
+                        {it.qty}× {it.name}
+                      </AppText>
+                      <View style={styles.badges}>
+                        <Badge label={station.short} fg={station.fg} bg={station.bg} />
+                        {it.isVoided ? <Badge label="Voided" fg={COLORS.danger} bg={COLORS.dangerBg} /> : null}
+                      </View>
+                      {it.notes ? (
+                        <AppText variant="caption" tone="secondary">
+                          {it.notes}
+                        </AppText>
+                      ) : null}
+                      {it.isVoided && it.voidReason ? (
+                        <AppText variant="caption" tone="muted">
+                          Reason: {it.voidReason}
+                        </AppText>
+                      ) : null}
+                    </View>
+                    <View style={styles.orderedRight}>
+                      <AppText
+                        variant="bodyStrong"
+                        money
+                        tone={it.isVoided ? 'muted' : 'primary'}
+                        style={it.isVoided && styles.strike}
+                      >
+                        {formatMoney(it.price * it.qty)}
+                      </AppText>
+                      {!it.isVoided && canOrder ? (
+                        <Button
+                          label="Void"
+                          variant="dangerGhost"
+                          onPress={() => {
+                            setSelectedVoidItemIndex(idx);
+                            setSelectedVoidItem(it);
+                            setShowVoidModal(true);
+                          }}
+                          testID={`void-item-${idx}`}
+                          accessibilityLabel={`Void ${it.name}`}
+                          style={styles.voidBtn}
+                        />
+                      ) : null}
+                    </View>
                   </View>
-                ) : canOrder ? (
-                  <TouchableOpacity
-                    style={styles.voidBtn}
-                    onPress={() => {
-                      setSelectedVoidItemIndex(idx);
-                      setSelectedVoidItem(it);
-                      setShowVoidModal(true);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.voidBtnText}>Void Item</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            ))}
+                );
+              })
+            )}
+          </ScrollView>
 
-            {/* Quick Settle footer in running items */}
-            {canSettle ? (
-              <TouchableOpacity
-                style={styles.fullSettleBar}
-                onPress={() => setShowBillingModal(true)}
-              >
-                <MaterialCommunityIcons name="receipt" size={18} color="#ffffff" />
-                <Text style={styles.fullSettleBarText}>
-                  Settle & Print Receipt • Total: ₹{runningTotal.toFixed(2)}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </ScrollView>
+          {canSettle ? (
+            <View style={styles.footer}>
+              <Button
+                label="Settle bill"
+                size="lg"
+                // The cart bar's Review order is the main action while there are unsent items
+                variant={canOrder && cartCount > 0 ? 'secondary' : 'primary'}
+                trailing={formatMoney(runningTotal)}
+                onPress={openBilling}
+                testID="settle"
+              />
+            </View>
+          ) : null}
+        </View>
       ) : (
-        /* 4. MENU CATALOG VIEW */
-        <View style={{ flex: 1 }}>
-          {/* Search Bar + 86 Manager Mode Toggle */}
-          <View style={styles.searchAnd86Row}>
-            <View style={styles.searchRow}>
-              <Ionicons name="search" size={16} color={COLORS.textMuted} style={{ marginRight: 6 }} />
+        /* Menu */
+        <View style={styles.flex}>
+          <View style={styles.searchRow}>
+            <View style={styles.search}>
+              <Feather name="search" size={18} color={COLORS.textMuted} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search food, drinks, shisha..."
+                placeholder="Search menu"
                 placeholderTextColor={COLORS.textMuted}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
+                returnKeyType="search"
+                autoCorrect={false}
+                accessibilityLabel="Search menu"
+                testID="menu-search"
               />
               {searchQuery ? (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={16} color={COLORS.textMuted} />
-                </TouchableOpacity>
+                <IconButton icon="x" label="Clear search" tone="muted" onPress={() => setSearchQuery('')} testID="menu-search-clear" style={styles.clearBtn} />
               ) : null}
             </View>
-
             {canStock ? (
-            <TouchableOpacity
-              style={[styles.btn86Mode, is86ManagerMode && styles.btn86ModeActive]}
-              onPress={() => setIs86ManagerMode((prev) => !prev)}
-            >
-              <MaterialCommunityIcons
-                name="store-cog"
-                size={16}
-                color={is86ManagerMode ? '#ffffff' : COLORS.textMuted}
-              />
-              <Text
-                style={[
-                  styles.btn86ModeText,
-                  is86ManagerMode && styles.btn86ModeTextActive,
-                ]}
-              >
-                {is86ManagerMode ? '86 Mode ON' : '86 Mode'}
-              </Text>
-            </TouchableOpacity>
+              <Chip label="Edit stock" selected={is86ManagerMode} onPress={() => setIs86ManagerMode((prev) => !prev)} testID="stock-mode" />
             ) : null}
           </View>
 
-          {/* Category Pills */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroll}
-            contentContainerStyle={{ paddingVertical: 2 }}
-          >
+          <ChipRow style={styles.categories}>
             {categories.map((cat) => (
-              <TouchableOpacity
+              <Chip
                 key={cat}
-                style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
+                label={cat}
+                selected={selectedCategory === cat}
                 onPress={() => setSelectedCategory(cat)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.categoryPillText,
-                    selectedCategory === cat && styles.categoryPillTextActive,
-                  ]}
-                >
-                  {cat}
-                </Text>
-              </TouchableOpacity>
+                testID={`category-${cat}`}
+              />
             ))}
-          </ScrollView>
+          </ChipRow>
 
-          {/* Menu List */}
+          {canStock && is86ManagerMode ? (
+            <View style={styles.banner}>
+              <Banner tone="info" text="Tap a status to mark an item in or out of stock." actionLabel="Done" onAction={() => setIs86ManagerMode(false)} />
+            </View>
+          ) : null}
+
           <FlatList
             data={filteredMenu}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.menuList}
+            style={styles.flex}
+            contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            ListEmptyComponent={
+              searchQuery ? (
+                <EmptyState icon="search" title="No matches" hint={`Nothing on the menu matches "${searchQuery}".`} />
+              ) : (
+                <EmptyState icon="book-open" title="No items here" hint="Pick another category." />
+              )
+            }
             renderItem={({ item }) => {
               const cartItem = cart.find((x) => x.id === item.id);
               return (
@@ -347,15 +315,10 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         </View>
       )}
 
-      {/* 5. FLOATING CART BAR */}
-      <StickyCartBar
-        count={canOrder ? cartCount : 0}
-        total={cartTotal}
-        onReview={() => setShowReviewModal(true)}
-      />
+      {/* Unsent items, pinned above the bottom nav */}
+      <StickyCartBar count={canOrder ? cartCount : 0} total={cartTotal} onReview={() => setShowReviewModal(true)} />
 
-      {/* 6. MODALS */}
-      {/* Review & Punch KOT Modal */}
+      {/* Review & send KOT */}
       <ReviewKOTModal
         visible={showReviewModal}
         onClose={() => setShowReviewModal(false)}
@@ -365,7 +328,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         }}
       />
 
-      {/* Table Transfer Modal */}
+      {/* Move table */}
       {activeOrder && (
         <TableTransferModal
           visible={showTransferModal}
@@ -379,7 +342,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         />
       )}
 
-      {/* Table Merge Modal */}
+      {/* Merge tables */}
       <TableMergeModal
         visible={showMergeModal}
         onClose={() => setShowMergeModal(false)}
@@ -390,7 +353,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         }}
       />
 
-      {/* Void Entire Order Modal */}
+      {/* Void the whole order */}
       {activeOrder && (
         <VoidOrderModal
           visible={showCancelOrderModal}
@@ -404,7 +367,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         />
       )}
 
-      {/* Item Void Modal */}
+      {/* Void one item */}
       {activeOrder && selectedVoidItem && (
         <ItemVoidModal
           visible={showVoidModal}
@@ -425,7 +388,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
         />
       )}
 
-      {/* Mobile Billing & Checkout Modal */}
+      {/* Bill & settle */}
       <MobileBillingModal
         visible={showBillingModal}
         order={activeOrder || null}
@@ -440,253 +403,56 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: COLORS.bgPrimary },
+  flex: { flex: 1 },
+  top: { gap: SPACE.md, paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.sm },
+  tiles: { flexDirection: 'row', gap: SPACE.sm },
+
+  // Menu
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs },
+  search: {
     flex: 1,
-    padding: 12,
-  },
-  orderHeaderBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.bgCard,
-    padding: 12,
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-  },
-  orderTableLabel: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  orderTableName: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  runningOrderText: {
-    color: COLORS.gold,
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  vacantTableText: {
-    color: '#10b981',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  headerActionsColumn: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  settleBtnHeader: {
+    minHeight: TOUCH.min,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: COLORS.kitchen,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  settleBtnHeaderText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  subActionsRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  actionBtnSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: COLORS.bgSurface,
-    borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.4)',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  actionBtnSmallText: {
-    color: COLORS.gold,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  tabSwitchRow: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.bgCard,
-    borderRadius: 10,
-    padding: 3,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-  },
-  tabSwitchBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  tabSwitchBtnActive: {
-    backgroundColor: COLORS.primary,
-  },
-  tabSwitchText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-  },
-  tabSwitchTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  runningListContainer: {
-    gap: 8,
-    paddingBottom: 24,
-  },
-  runningItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.bgCard,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-  },
-  runningItemRowVoided: {
-    opacity: 0.4,
-    backgroundColor: 'rgba(239, 68, 68, 0.05)',
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  runningItemName: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  runningItemNameVoided: {
-    textDecorationLine: 'line-through',
-    color: '#ef4444',
-  },
-  runningItemMeta: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  voidBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  voidBtnText: {
-    color: '#ef4444',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  voidBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  voidBadgeText: {
-    color: '#ef4444',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  fullSettleBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: COLORS.kitchen,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-  fullSettleBarText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  searchAnd86Row: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  searchRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.bgCard,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-  },
-  searchInput: {
-    flex: 1,
-    color: COLORS.textPrimary,
-    fontSize: 12,
-    padding: 0,
-  },
-  btn86Mode: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: COLORS.bgSurface,
+    gap: SPACE.sm,
+    paddingLeft: SPACE.md,
+    backgroundColor: COLORS.bgInput,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.borderDefault,
-    paddingHorizontal: 10,
-    borderRadius: 10,
   },
-  btn86ModeActive: {
-    backgroundColor: '#9f1119',
-    borderColor: '#ef4444',
-  },
-  btn86ModeText: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  btn86ModeTextActive: {
-    color: '#ffffff',
-  },
-  categoryScroll: {
-    maxHeight: 38,
-    marginBottom: 10,
-  },
-  categoryPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: COLORS.bgSurface,
-    marginRight: 6,
+  searchInput: { ...TYPE.body, flex: 1, minHeight: TOUCH.min, color: COLORS.textPrimary, paddingVertical: 0 },
+  clearBtn: { width: 44, height: 44 },
+  categories: { paddingVertical: SPACE.sm },
+  banner: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm },
+  list: { gap: SPACE.sm, paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs, paddingBottom: SPACE.xxl },
+
+  // Ordered
+  orderedRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACE.md,
+    minHeight: 64,
+    paddingLeft: SPACE.lg,
+    paddingRight: SPACE.sm,
+    paddingVertical: SPACE.md,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
   },
-  categoryPillActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primaryHover,
-  },
-  categoryPillText: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  categoryPillTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  menuList: {
-    gap: 8,
-    paddingBottom: 70,
+  orderedInfo: { gap: SPACE.xs },
+  orderedRight: { alignItems: 'flex-end', gap: SPACE.xs, paddingRight: SPACE.sm },
+  voided: { opacity: 0.7 },
+  strike: { textDecorationLine: 'line-through' },
+  badges: { flexDirection: 'row', gap: SPACE.xs, flexWrap: 'wrap' },
+  voidBtn: { paddingHorizontal: SPACE.md, marginRight: -SPACE.sm },
+  footer: {
+    paddingHorizontal: SPACE.lg,
+    paddingVertical: SPACE.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderSubtle,
+    backgroundColor: COLORS.bgSecondary,
   },
 });
