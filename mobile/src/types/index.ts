@@ -123,4 +123,6 @@ export interface KOT {
   duration?: number;
   status: KOTStatus;
   createdAt: string;
+  /** When the ticket/pot was started (shisha timer restarts on a head change) */
+  startedAt?: string;
 }

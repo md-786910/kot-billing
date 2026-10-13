@@ -281,6 +281,7 @@ export async function fetchKOTs(): Promise<KOT[]> {
     duration: k.duration,
     status: k.status,
     createdAt: k.createdAt,
+    startedAt: k.startedAt,
   }));
 }
 
