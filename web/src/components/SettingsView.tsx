@@ -188,6 +188,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
 
+          <fieldset className="pt-2">
+            <legend className="text-sm font-semibold text-neutral-300 mb-2">KOT copies (each prints on its own cut)</legend>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-200">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked disabled className="w-4 h-4" />
+                Station copy (kitchen / bar / shisha) — always
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.kotStaffCopy ?? true}
+                  onChange={(e) => setFormData({ ...formData, kotStaffCopy: e.target.checked })}
+                  className="w-4 h-4"
+                  data-testid="kot-copy-staff"
+                />
+                Staff copy
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.kotAdminCopy ?? true}
+                  onChange={(e) => setFormData({ ...formData, kotAdminCopy: e.target.checked })}
+                  className="w-4 h-4"
+                  data-testid="kot-copy-admin"
+                />
+                Admin copy
+              </label>
+            </div>
+          </fieldset>
+
           <div className="flex items-center justify-between pt-2">
             <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
               <input

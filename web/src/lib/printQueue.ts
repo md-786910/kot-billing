@@ -6,7 +6,7 @@ import { DeviceModel } from '@/models/Device';
 import { SettingsModel } from '@/models/Settings';
 import { describePrintJob, PrintPayload } from '@/lib/print/render';
 import { toBillPrint, toKotPrint, toPrintSettings, toZReportPrint } from '@/lib/print/adapters';
-import type { BillPrint } from '@/lib/print/templates';
+import type { BillPrint, KotCopy } from '@/lib/print/templates';
 
 /** A print station that hasn't polled for this long is shown as offline */
 export const STATION_OFFLINE_MS = 30_000;
@@ -36,13 +36,25 @@ async function settingsSnapshot() {
   return toPrintSettings(await SettingsModel.findOne().lean());
 }
 
-export function queueKots(kots: any[], auth: AuthContext | null) {
-  if (!kots.length) return Promise.resolve(null);
-  return enqueue({ kind: 'kot', kots: kots.map(toKotPrint) }, auth);
+/** Copies each KOT prints: the station copy always, then staff and admin copies if the lounge wants them */
+async function kotCopies(): Promise<KotCopy[]> {
+  const s = await SettingsModel.findOne().select('kotStaffCopy kotAdminCopy').lean();
+  const copies: KotCopy[] = ['STATION'];
+  if (s?.kotStaffCopy ?? true) copies.push('STAFF');
+  if (s?.kotAdminCopy ?? true) copies.push('ADMIN');
+  return copies;
 }
 
-export function queueCancel(voidKot: any, auth: AuthContext | null) {
-  return enqueue({ kind: 'cancel', kot: toKotPrint(voidKot) }, auth);
+/** New KOTs print every copy; a reprint (lost ticket) prints one station copy marked REPRINT */
+export async function queueKots(kots: any[], auth: AuthContext | null, opts: { reprint?: boolean } = {}) {
+  if (!kots.length) return null;
+  const copies: KotCopy[] = opts.reprint ? ['STATION'] : await kotCopies();
+  return enqueue({ kind: 'kot', kots: kots.map(toKotPrint), copies, reprint: opts.reprint }, auth);
+}
+
+export async function queueCancel(voidKot: any, auth: AuthContext | null, opts: { reprint?: boolean } = {}) {
+  const copies: KotCopy[] = opts.reprint ? ['STATION'] : await kotCopies();
+  return enqueue({ kind: 'cancel', kot: toKotPrint(voidKot), copies, reprint: opts.reprint }, auth);
 }
 
 export async function queueBill(order: any, booking: BillPrint['booking'] | undefined, auth: AuthContext | null) {

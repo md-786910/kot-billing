@@ -10,6 +10,9 @@ export interface ISettings extends Document {
   soundAlerts: boolean;
   shishaDefaultDuration: number;
   upiId?: string;
+  /** Extra KOT copies besides the station copy */
+  kotStaffCopy: boolean;
+  kotAdminCopy: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +28,8 @@ const SettingsSchema = new Schema<ISettings>(
     soundAlerts: { type: Boolean, default: true },
     shishaDefaultDuration: { type: Number, default: 45 },
     upiId: { type: String, default: '' },
+    kotStaffCopy: { type: Boolean, default: true },
+    kotAdminCopy: { type: Boolean, default: true },
   },
   { timestamps: true }
 );

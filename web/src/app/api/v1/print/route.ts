@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       const kot = mongoose.isValidObjectId(id) ? await KOTModel.findById(id).lean() : await KOTModel.findOne({ kotNumber: id }).lean();
       if (!kot) return jsonError('KOT not found', 404);
       const isCancel = kot.status === 'CANCELLED' || kot.kotNumber.startsWith('VOID-');
-      const job = isCancel ? await queueCancel(kot, auth) : await queueKots([kot], auth);
+      const job = isCancel ? await queueCancel(kot, auth, { reprint: true }) : await queueKots([kot], auth, { reprint: true });
       return NextResponse.json({ success: !!job, data: { id: job ? String(job._id) : null } }, { status: job ? 200 : 500 });
     }
 

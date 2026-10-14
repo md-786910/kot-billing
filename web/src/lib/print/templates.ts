@@ -63,6 +63,15 @@ export interface ZReportPrint {
 
 const STATION_LABEL: Record<string, string> = { Kitchen: 'KITCHEN', 'Beverage Counter': 'BAR', 'Shisha Master': 'SHISHA' };
 
+/** KOT copies: the station's own copy, the waiter's copy, and the office record */
+export type KotCopy = 'STATION' | 'STAFF' | 'ADMIN';
+
+function copyBanner(copy: KotCopy | undefined, station: string, reprint?: boolean): string {
+  if (!copy) return '';
+  const label = copy === 'STATION' ? `${station} COPY` : `${copy} COPY`;
+  return `<div class="c b s copy" data-copy="${copy}">— ${esc(label)}${reprint ? ' · REPRINT' : ''} —</div>`;
+}
+
 function esc(value: unknown): string {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
@@ -100,7 +109,7 @@ export function printDocument(slips: string[], title = 'Layali print'): string {
 }
 
 /** Kitchen/bar/shisha ticket: big table and station, no prices. */
-export function kotSlip(kot: KotPrint): string {
+export function kotSlip(kot: KotPrint, copy?: KotCopy, reprint?: boolean): string {
   const station = STATION_LABEL[kot.station] ?? kot.station.toUpperCase();
   const items = kot.items
     .map(
@@ -110,6 +119,7 @@ export function kotSlip(kot: KotPrint): string {
     )
     .join('');
   return `<div class="slip" data-kind="kot">
+  ${copyBanner(copy, station, reprint)}
   <div class="c"><span class="inv l">${esc(station)}</span></div>
   <div class="c xl" style="margin-top:4px">${esc(kot.table)}</div>
   <div class="c s">${esc(kot.kotNumber ?? '')}${kot.orderNumber ? ` · ${esc(kot.orderNumber)}` : ''}</div>
@@ -129,7 +139,7 @@ function plainReason(note?: string): string {
 }
 
 /** Cancellation ticket for the kitchen after a void. */
-export function cancelSlip(kot: KotPrint): string {
+export function cancelSlip(kot: KotPrint, copy?: KotCopy, reprint?: boolean): string {
   const station = STATION_LABEL[kot.station] ?? kot.station.toUpperCase();
   const items = kot.items
     .map(
@@ -139,6 +149,7 @@ export function cancelSlip(kot: KotPrint): string {
     )
     .join('');
   return `<div class="slip" data-kind="cancel">
+  ${copyBanner(copy, station, reprint)}
   <div class="c"><span class="inv xl">CANCEL</span></div>
   <div class="c l" style="margin-top:4px">${esc(station)} · ${esc(kot.table)}</div>
   <div class="c s">${esc(kot.kotNumber ?? '')} · ${esc(when(kot.created))}</div>

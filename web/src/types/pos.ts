@@ -136,6 +136,9 @@ export interface AppSettings {
   soundAlerts: boolean;
   shishaDefaultDuration: number;
   upiId?: string;
+  /** Extra KOT copies besides the station copy */
+  kotStaffCopy?: boolean;
+  kotAdminCopy?: boolean;
 }
 
 /** Private room charge as printed on the bill */

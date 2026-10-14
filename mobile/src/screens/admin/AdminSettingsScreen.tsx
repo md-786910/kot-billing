@@ -68,6 +68,8 @@ type Form = {
   gstNumber: string;
   taxPercent: number;
   shishaMinutes: string;
+  kotStaffCopy: boolean;
+  kotAdminCopy: boolean;
 };
 
 function toForm(s: LoungeSettings): Form {
@@ -79,6 +81,8 @@ function toForm(s: LoungeSettings): Form {
     gstNumber: s.gstNumber,
     taxPercent: s.taxPercent,
     shishaMinutes: String(s.shishaDefaultDuration),
+    kotStaffCopy: s.kotStaffCopy,
+    kotAdminCopy: s.kotAdminCopy,
   };
 }
 
@@ -130,6 +134,8 @@ export function AdminSettingsScreen() {
         gstNumber: form.gstNumber.trim().toUpperCase(),
         taxPercent: form.taxPercent,
         shishaDefaultDuration: /^\d+$/.test(minutes) ? Number(minutes) : 0,
+        kotStaffCopy: form.kotStaffCopy,
+        kotAdminCopy: form.kotAdminCopy,
       });
       setResult({ tone: 'success', text: 'Saved. New bills use these details.' });
       await load();
@@ -252,6 +258,26 @@ export function AdminSettingsScreen() {
           editable={canEdit}
           testID="settings-shisha-minutes"
         />
+
+        {/* Every KOT prints the station copy; staff and admin copies are optional */}
+        <View>
+          <SectionLabel>KOT copies</SectionLabel>
+          <View style={styles.chipWrap}>
+            <Chip label="Station copy (always)" selected onPress={() => {}} testID="kot-copy-station" />
+            <Chip
+              label="Staff copy"
+              selected={form.kotStaffCopy}
+              onPress={() => canEdit && set('kotStaffCopy', !form.kotStaffCopy)}
+              testID="kot-copy-staff"
+            />
+            <Chip
+              label="Admin copy"
+              selected={form.kotAdminCopy}
+              onPress={() => canEdit && set('kotAdminCopy', !form.kotAdminCopy)}
+              testID="kot-copy-admin"
+            />
+          </View>
+        </View>
       </ScrollView>
 
       {canEdit ? (

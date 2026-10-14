@@ -48,6 +48,9 @@ export interface LoungeSettings {
   soundAlerts: boolean;
   shishaDefaultDuration: number;
   upiId: string;
+  /** Extra KOT copies besides the station copy */
+  kotStaffCopy: boolean;
+  kotAdminCopy: boolean;
 }
 
 export const GST_RATES = [0, 5, 12, 18, 28] as const;
@@ -65,6 +68,8 @@ export async function fetchSettings(): Promise<LoungeSettings> {
     soundAlerts: d.soundAlerts !== false,
     shishaDefaultDuration: Number(d.shishaDefaultDuration ?? 45),
     upiId: d.upiId ?? '',
+    kotStaffCopy: d.kotStaffCopy ?? true,
+    kotAdminCopy: d.kotAdminCopy ?? true,
   };
 }
 

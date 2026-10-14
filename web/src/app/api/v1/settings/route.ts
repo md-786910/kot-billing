@@ -16,6 +16,8 @@ function publicSettings(doc: Record<string, unknown> | null) {
     soundAlerts: doc?.soundAlerts ?? true,
     shishaDefaultDuration: doc?.shishaDefaultDuration ?? 45,
     upiId: doc?.upiId ?? '',
+    kotStaffCopy: doc?.kotStaffCopy ?? true,
+    kotAdminCopy: doc?.kotAdminCopy ?? true,
   };
 }
 
@@ -65,6 +67,9 @@ export async function PATCH(req: NextRequest) {
       update.shishaDefaultDuration = v;
     }
     if (body.soundAlerts !== undefined) update.soundAlerts = body.soundAlerts === true;
+    // The station copy always prints; staff and admin copies are optional
+    if (body.kotStaffCopy !== undefined) update.kotStaffCopy = body.kotStaffCopy === true;
+    if (body.kotAdminCopy !== undefined) update.kotAdminCopy = body.kotAdminCopy === true;
 
     const doc = await SettingsModel.findOneAndUpdate({}, { $set: update }, { upsert: true, returnDocument: 'after' }).lean();
     await audit(guard.auth, 'settings.updated', null, update);
