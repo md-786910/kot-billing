@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { queueZReport } from '@/lib/printQueue';
 import { requireAuth } from '@/lib/auth';
 import { maxSuffix, nextSequence } from '@/lib/counters';
 
@@ -199,6 +200,8 @@ export async function POST(req: NextRequest) {
       if (notes) activeShift.notes = notes;
 
       await activeShift.save();
+      // Z-report prints at the counter for the cash drawer
+      await queueZReport(activeShift, auth);
 
       return NextResponse.json({ success: true, data: activeShift });
     }

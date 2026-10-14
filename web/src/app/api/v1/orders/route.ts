@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { queueKots } from '@/lib/printQueue';
 import { AuthContext, requireAuth, serverError, str } from '@/lib/auth';
 import { createStationKots, isDuplicateKey, nextOrderNumber, priceItems } from '@/lib/orders';
 import { withIdempotency } from '@/lib/idempotency';
@@ -96,6 +97,7 @@ async function createOrder(req: NextRequest, auth: AuthContext) {
 
     await TableModel.updateOne({ name: tableName }, { status: 'OCCUPIED', currentOrderId: order._id.toString() });
     const kots = await createStationKots(order, items, notes, duration);
+    await queueKots(kots, auth);
 
     broadcastRealtimeEvent(appended ? 'ORDER_UPDATED' : 'ORDER_CREATED', { order: order.toObject(), kots });
     broadcastRealtimeEvent('TABLE_STATUS_CHANGED', { name: tableName, status: 'OCCUPIED' });
@@ -111,10 +113,10 @@ async function createOrder(req: NextRequest, auth: AuthContext) {
 export async function PATCH(req: NextRequest) {
   const guard = await requireAuth(req, 'order.create');
   if (!guard.ok) return guard.response;
-  return withIdempotency(req, guard.auth, () => addRound(req));
+  return withIdempotency(req, guard.auth, () => addRound(req, guard.auth));
 }
 
-async function addRound(req: NextRequest) {
+async function addRound(req: NextRequest, auth: AuthContext) {
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -131,6 +133,7 @@ async function addRound(req: NextRequest) {
     order.items.push(...priced.items);
     await order.save();
     const newKots = await createStationKots(order, priced.items, str(body.notes, 500), order.duration);
+    await queueKots(newKots, auth);
 
     broadcastRealtimeEvent('ORDER_UPDATED', { order: order.toObject(), kots: newKots });
     for (const k of newKots) broadcastRealtimeEvent('KOT_CREATED', k);

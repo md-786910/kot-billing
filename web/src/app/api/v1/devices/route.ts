@@ -7,13 +7,15 @@ import { audit, jsonError, requireAuth, respondWithDevice, revokeDeviceSessions,
 
 const PAIRING_CODE_MINUTES = 10;
 
+// Counter computers and staff phones; station displays are not part of this product
+const PAIRABLE: DeviceType[] = ['TERMINAL', 'MOBILE'];
+
 function parseDeviceInput(body: Record<string, unknown>): { name: string; type: DeviceType; station: DeviceStation | null } | string {
   const name = str(body.name, 40);
-  // This product pairs counter terminals only (no waiter phones or station displays)
-  const type = str(body.type, 20) || 'TERMINAL';
+  const type = (str(body.type, 20) || 'TERMINAL') as DeviceType;
   if (!name) return 'Enter a device name';
-  if (type !== 'TERMINAL') return 'Only counter terminals can be paired';
-  return { name, type: 'TERMINAL', station: null };
+  if (!PAIRABLE.includes(type)) return 'Choose counter computer or staff phone';
+  return { name, type, station: null };
 }
 
 export async function GET(req: NextRequest) {
@@ -30,6 +32,7 @@ export async function GET(req: NextRequest) {
         station: d.station ?? null,
         lastSeenAt: d.lastSeenAt ?? null,
         pairedBy: d.pairedBy ?? null,
+        printStation: !!d.printStation,
         isCurrent: String(d._id) === guard.auth.device?.id,
       })),
     });
@@ -81,6 +84,17 @@ export async function PATCH(req: NextRequest) {
     if (!mongoose.isValidObjectId(id)) return jsonError('Device not found', 404);
     const device = await DeviceModel.findOne({ _id: id, revokedAt: null });
     if (!device) return jsonError('Device not found', 404);
+
+    // One counter computer prints for everyone
+    if (body.printStation !== undefined) {
+      if (body.printStation === true && device.type !== 'TERMINAL') return jsonError('Only a counter computer can print', 400);
+      if (body.printStation === true) await DeviceModel.updateMany({ _id: { $ne: id } }, { printStation: false });
+      device.printStation = body.printStation === true;
+      if (device.printStation) device.lastSeenAt = new Date();
+      await device.save();
+      await audit(guard.auth, 'device.print_station', id, { name: device.name, printStation: device.printStation });
+      return NextResponse.json({ success: true });
+    }
 
     if (body.revoke === true) {
       device.revokedAt = new Date();

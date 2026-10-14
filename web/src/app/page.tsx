@@ -8,13 +8,13 @@ import {
   PrivateBooking,
   KOT,
   AppSettings,
-  KOTStatus,
   CartItem,
   BillBooking,
 } from '@/types/pos';
 import { POSOrderView } from '@/components/POSOrderView';
 import { KOTLogView } from '@/components/KOTLogView';
-import { PrintProvider, createPrinter } from '@/components/print/PrintProvider';
+import { requestPrint } from '@/lib/print/printer';
+import { PrinterStatus } from '@/components/print/PrinterStatus';
 import { ShishaTimerView } from '@/components/ShishaTimerView';
 import { LiveOrdersView } from '@/components/LiveOrdersView';
 import { PrivateBookingsView } from '@/components/PrivateBookingsView';
@@ -25,27 +25,7 @@ import { TopBar } from '@/components/TopBar';
 import { NavTabs, WebTabKey, allowedTabs } from '@/components/NavTabs';
 import { AuthProvider, useAuth } from '@/components/auth/AuthProvider';
 import { TeamView } from '@/components/auth/TeamView';
-import { playOrderChime, playTimerAlert } from '@/utils/audio';
-import { formatINR } from '@/utils/format';
-import {
-  Flame,
-  ChefHat,
-  Receipt,
-  Shield,
-  Layers,
-  Settings,
-  Clock,
-  Printer,
-  Volume2,
-  VolumeX,
-  Bell,
-  Sparkles,
-  Database,
-  Wifi,
-  WifiOff,
-  RefreshCw,
-  Smartphone,
-} from 'lucide-react';
+import { playOrderChime } from '@/utils/audio';
 
 const DEFAULT_SETTINGS: AppSettings = {
   loungeName: 'LAYALI SHISHA LOUNGE',
@@ -103,7 +83,6 @@ function POSApp() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const printer = useMemo(() => createPrinter(settings), [settings]);
 
   const visibleTabs = useMemo(() => allowedTabs(auth.permissions), [auth.permissions]);
   const [selectedTab, setActiveTab] = useState<WebTabKey>('order');
@@ -331,8 +310,7 @@ function POSApp() {
         if (res.status !== 401) alert(json.error || 'Failed to submit order');
         return false;
       }
-      // One slip per station from the counter printer; the runner takes it to the kitchen/bar/shisha
-      printer.printKots(json.data?.kots ?? []);
+      // The server queues one KOT slip per station for the counter printer
       if (settings.soundAlerts) playOrderChime();
       await refreshAllData();
       setActiveTab('live');
@@ -438,6 +416,7 @@ function POSApp() {
           taxPercent: options?.taxPercent,
           closeOrder: true,
           approvalPin,
+          booking: options?.booking,
         }),
       }).then(async (res) => ({ status: res.status, json: await res.json() }));
 
@@ -452,7 +431,6 @@ function POSApp() {
         alert(json.error || 'Could not settle the bill');
         return false;
       }
-      if (json.data?.closed) printer.printBill(json.data, options?.booking);
       await refreshAllData();
       return true;
     } catch {
@@ -474,7 +452,6 @@ function POSApp() {
   );
 
   return (
-    <PrintProvider printer={printer}>
     <div className="min-h-screen bg-[#0a0c10] text-slate-100 flex flex-col selection:bg-[#9f1119] selection:text-white">
       <header className="no-print bg-[#10131a] border-b border-neutral-800/80 px-4 py-3 sticky top-0 z-40 shadow-lg">
         <div className="max-w-[1720px] mx-auto">
@@ -489,6 +466,7 @@ function POSApp() {
             deviceName={auth.device?.name}
             onOpenAccount={auth.openAccount}
             onLock={auth.lock}
+            printerStatus={<PrinterStatus isStation={!!auth.device?.printStation} />}
           />
           <NavTabs
             activeTab={activeTab}
@@ -574,10 +552,11 @@ function POSApp() {
             onSelectOrderId={(id) => setSelectedBillingOrderId(id)}
             onRecordPayment={handleRecordPayment}
             onPrintReceipt={(order, booking) =>
-              printer.printBill(
-                order,
-                booking ? { venue: booking.venue, rate: booking.rate, hours: booking.hours, advance: booking.advance } : undefined
-              )
+              requestPrint({
+                kind: 'bill',
+                orderId: order.id,
+                booking: booking ? { venue: booking.venue, rate: booking.rate, hours: booking.hours, advance: booking.advance } : undefined,
+              })
             }
           />
         )}
@@ -622,6 +601,5 @@ function POSApp() {
       </main>
 
     </div>
-    </PrintProvider>
   );
 }

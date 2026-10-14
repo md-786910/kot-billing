@@ -12,7 +12,8 @@ export type RealtimeEventType =
   | 'BOOKING_CLOSED'
   | 'TABLE_MERGED'
   | 'TABLE_TRANSFERRED'
-  | 'BILL_SETTLED';
+  | 'BILL_SETTLED'
+  | 'PRINT_JOB';
 
 export interface RealtimeMessage {
   type: RealtimeEventType;

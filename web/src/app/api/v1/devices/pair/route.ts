@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       tokenHash: sha256(token),
       pairedBy: pairing.createdBy,
     });
-    const data = { id: String(device._id), name: device.name, type: device.type, station: device.station ?? null };
+    const data = { id: String(device._id), name: device.name, type: device.type, station: device.station ?? null, printStation: false };
     await audit(
       { user: null, device: data, sessionId: null, permissions: [], actorName: device.name },
       'device.paired',

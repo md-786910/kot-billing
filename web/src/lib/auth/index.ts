@@ -29,6 +29,7 @@ export interface AuthDevice {
   name: string;
   type: DeviceType;
   station: DeviceStation | null;
+  printStation: boolean;
 }
 
 export interface AuthContext {
@@ -137,7 +138,7 @@ export async function getAuth(req: NextRequest): Promise<AuthContext> {
   if (deviceToken) {
     const doc = await DeviceModel.findOne({ tokenHash: sha256(deviceToken), revokedAt: null }).lean();
     if (doc) {
-      device = { id: String(doc._id), name: doc.name, type: doc.type, station: doc.station ?? null };
+      device = { id: String(doc._id), name: doc.name, type: doc.type, station: doc.station ?? null, printStation: !!doc.printStation };
       if (!doc.lastSeenAt || now.getTime() - new Date(doc.lastSeenAt).getTime() > TOUCH_INTERVAL_MS) {
         await DeviceModel.updateOne({ _id: doc._id }, { lastSeenAt: now });
       }

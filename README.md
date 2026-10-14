@@ -1,13 +1,13 @@
 # Layali Restaurant & Lounge POS
 
-Counter POS for Layali: orders are entered at the counter, KOTs and customer bills print on the counter's thermal printer, and the cashier runs the cash drawer. No waiter or kitchen apps are needed.
+POS for Layali: orders are entered at the counter (web) or on a staff phone (app), and every KOT, bill and report prints on the counter's thermal printer. The phone app has the same features as the web.
 
 ---
 
 ## How the restaurant uses it
 
 1. **Waiter** takes the order at the table and tells the counter.
-2. **Counter (cashier / manager)** punches the order in the web POS → one **KOT slip per station** (Kitchen, Bar, Shisha) prints immediately. The runner takes it to the station.
+2. **Counter or staff phone (cashier / manager)** punches the order → one **KOT slip per station** (Kitchen, Bar, Shisha) prints at the counter. The runner takes it to the station.
 3. Extra rounds print new KOTs. A **void** prints a **CANCEL** slip so the kitchen stops preparing.
 4. **Bill**: "Print bill" for the guest, then **Settle** (Cash / UPI / Card / Split / Khata) → the receipt prints with its GST invoice number and the table is freed.
 5. **Cash drawer**: open the shift with a float, record cash drops, close the shift → the **Z-report** prints.
@@ -25,13 +25,14 @@ Counter POS for Layali: orders are entered at the counter, KOTs and customer bil
 
 ```
 kot-billing/
-├── web/                          # Next.js 16 app: counter POS + admin + REST API (/api/v1) + MongoDB
+├── web/                          # Next.js 16 app: counter POS + admin + REST API (/api/v1) + MongoDB + print queue
 │   └── src/
 │       ├── app/                  # Page and API route handlers
 │       ├── components/           # POS, billing, KOT log, shifts, bookings, admin, auth
 │       ├── lib/print/            # 80 mm print templates (KOT, cancel, bill, Z-report) + printer
 │       ├── lib/auth/             # Sessions, PIN/password, roles, audit
 │       └── models/               # Mongoose models
+├── mobile/                       # Expo app for staff phones: same features as the web (orders, bills, bookings, cash drawer, admin)
 ├── plan/PROJECT_BLUEPRINT.md
 └── layali-kot-&-restaurant-pos/  # Original prototype (reference only)
 ```
@@ -55,7 +56,11 @@ kot-billing/
 4. In **Lounge Admin**, enter the real lounge name, address, phone, **GSTIN** and GST rate. They are printed on every bill.
 5. In **Staff & Devices**: add cashiers/managers, then **Pair this browser** on the counter computer (or create a pairing code for another counter computer).
 
-### Printer (counter PC)
+### Printer (counter PC = print station)
+
+All printing goes through one **print station**: the counter computer with the thermal printer. Phones and other counters never print themselves; the server queues each slip and the print station prints it (also while its screen is locked).
+
+- In **Staff & Devices**, press **Use for printing** on the counter computer. The top bar on every device shows the printer state (ready / offline / failed) and the **Print queue** with Retry.
 
 - Connect the 80 mm thermal printer and make it the **default printer**. In its driver set paper to 80 mm (receipt / roll) and margins to none.
 - Start Chrome in kiosk printing mode so slips print straight away without a dialog:
@@ -66,6 +71,13 @@ kot-billing/
 - Each KOT station prints on its own cut. Reprint any KOT from the **KOT log** tab, and any bill from **Cashier & Settlements**.
 
 ---
+
+### Staff phones (mobile app)
+
+```bash
+cd mobile && npm install && npx expo start      # development
+```
+In **Staff & Devices → Pair a device**, choose **Staff phone**, then enter the server address and the 6-digit code in the app. Staff sign in with their name + PIN. Everything printable from the phone (KOTs, bills, cancel slips, Z-report) prints at the print station.
 
 ## Sign-in & security
 

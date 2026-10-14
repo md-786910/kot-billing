@@ -14,6 +14,8 @@ export interface IDevice extends Document {
   tokenHash: string;
   pairedBy?: string;
   lastSeenAt?: Date;
+  /** This counter computer prints KOTs, bills and reports for every device */
+  printStation: boolean;
   revokedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -27,6 +29,7 @@ const DeviceSchema = new Schema<IDevice>(
     tokenHash: { type: String, required: true, unique: true, select: false },
     pairedBy: { type: String },
     lastSeenAt: { type: Date },
+    printStation: { type: Boolean, default: false },
     revokedAt: { type: Date, default: null },
   },
   { timestamps: true }

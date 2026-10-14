@@ -5,6 +5,7 @@ import type { Permission } from '@/lib/auth/permissions';
 import type { UserRole } from '@/types/pos';
 import { PinLockScreen, SetupScreen, SignInScreen } from './AuthScreens';
 import { AccountDialog } from './AccountDialog';
+import { PrintStation } from '@/components/print/PrintStation';
 import { api, AuthShell, Button, Modal, PinPad } from './ui';
 
 export interface SessionUser {
@@ -18,6 +19,8 @@ export interface SessionDevice {
   name: string;
   type: 'TERMINAL' | 'MOBILE' | 'DISPLAY';
   station: 'Kitchen' | 'Beverage Counter' | 'Shisha Master' | null;
+  /** This counter computer prints for every device */
+  printStation: boolean;
 }
 
 interface MeResponse {
@@ -139,14 +142,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
   if (!me) return <div className="min-h-screen bg-[#0a0c10]" />;
+  // The print station keeps printing for phones and other counters even while this screen is locked
+  const station = me.device?.printStation ? <PrintStation /> : null;
   if (me.setupRequired) return <SetupScreen onDone={refresh} />;
 
   const signedIn = !!user || device?.type === 'DISPLAY';
   if (!signedIn) {
     if (device && !usePassword) {
-      return <PinLockScreen deviceName={device.name} onDone={refresh} onPasswordSignIn={() => setUsePassword(true)} />;
+      return (
+        <>
+          {station}
+          <PinLockScreen deviceName={device.name} onDone={refresh} onPasswordSignIn={() => setUsePassword(true)} />
+        </>
+      );
     }
-    return <SignInScreen onDone={refresh} onBack={device ? () => setUsePassword(false) : undefined} />;
+    return (
+      <>
+        {station}
+        <SignInScreen onDone={refresh} onBack={device ? () => setUsePassword(false) : undefined} />
+      </>
+    );
   }
 
   const value: AuthApi = {
@@ -162,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={value}>
+      {station}
       {children}
       {approval && (
         <Modal title="Manager approval" onClose={() => closeApproval(null)}>

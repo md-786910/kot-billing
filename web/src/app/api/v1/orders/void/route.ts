@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { queueCancel } from '@/lib/printQueue';
 import { audit, authorizeOrApprove, requireAuth } from '@/lib/auth';
 import { nextKotNumber } from '@/lib/orders';
 import mongoose from 'mongoose';
@@ -112,6 +113,8 @@ export async function POST(req: NextRequest) {
       });
 
       broadcastRealtimeEvent('ORDER_UPDATED', { order: order.toObject() });
+      // Paper cancel slip for the station
+      await queueCancel(voidKot, auth);
       broadcastRealtimeEvent('KOT_CREATED', voidKot.toObject());
 
       return NextResponse.json({
@@ -175,6 +178,8 @@ export async function POST(req: NextRequest) {
     });
 
     broadcastRealtimeEvent('ORDER_UPDATED', { order: order.toObject() });
+    // Paper cancel slip for the station
+    await queueCancel(voidKot, auth);
     broadcastRealtimeEvent('KOT_CREATED', voidKot.toObject());
 
     return NextResponse.json({

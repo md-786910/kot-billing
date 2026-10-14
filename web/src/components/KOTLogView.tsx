@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { Printer, Search } from 'lucide-react';
 import { KOT } from '@/types/pos';
-import { usePrinter } from '@/components/print/PrintProvider';
+import { requestPrint } from '@/lib/print/printer';
 
 const STATIONS = [
   { key: 'All', label: 'All' },
@@ -24,7 +24,6 @@ function timeOf(iso: string) {
 
 /** Every KOT printed today, newest first, with reprint. Cancel slips reprint as cancel slips. */
 export function KOTLogView({ kots }: { kots: KOT[] }) {
-  const printer = usePrinter();
   const [station, setStation] = useState<(typeof STATIONS)[number]['key']>('All');
   const [query, setQuery] = useState('');
 
@@ -103,7 +102,7 @@ export function KOTLogView({ kots }: { kots: KOT[] }) {
                 </ul>
                 {k.notes && <p className="text-sm text-amber-300">{k.notes}</p>}
                 <button
-                  onClick={() => (cancel ? printer.printCancel(k) : printer.printKots([k]))}
+                  onClick={() => requestPrint({ kind: 'kot', kotId: k.kotNumber ?? k.id })}
                   className="mt-auto h-11 rounded-xl border border-neutral-700 bg-[#1b1f2d] hover:bg-[#252b3d] text-sm font-semibold text-white inline-flex items-center justify-center gap-2 cursor-pointer"
                   data-testid={`reprint-${k.kotNumber}`}
                 >

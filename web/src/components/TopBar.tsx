@@ -26,6 +26,8 @@ interface TopBarProps {
   deviceName?: string;
   onOpenAccount: () => void;
   onLock: () => void;
+  /** Counter printer indicator */
+  printerStatus?: React.ReactNode;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -39,6 +41,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   deviceName,
   onOpenAccount,
   onLock,
+  printerStatus,
 }) => {
   return (
     <div className="flex flex-col md:flex-row items-center justify-between gap-3">
@@ -130,6 +133,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           <Clock className="w-3.5 h-3.5" />
           <span>{currentTime || '00:00:00'}</span>
         </div>
+
+        {printerStatus}
 
         {/* Signed-in staff (opens My account) & lock; station displays show their device name */}
         {currentUser ? (

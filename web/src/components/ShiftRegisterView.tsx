@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { usePrinter } from '@/components/print/PrintProvider';
+import { requestPrint } from '@/lib/print/printer';
 import { ShiftRegister } from '@/types/pos';
 import { formatINR, formatDateTime } from '@/utils/format';
 import {
@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 
 export const ShiftRegisterView: React.FC = () => {
-  const printer = usePrinter();
   const [currentShift, setCurrentShift] = useState<ShiftRegister | null>(null);
   const [pastShifts, setPastShifts] = useState<ShiftRegister[]>([]);
   const [loading, setLoading] = useState(false);
@@ -138,8 +137,7 @@ export const ShiftRegisterView: React.FC = () => {
       if (json.success) {
         setShowCloseModal(false);
         setZReportData(json.data);
-        // Z-report prints for the cash drawer as soon as the shift is closed
-        printer.printZReport(json.data);
+        // The server queues the Z-report for the counter printer
         setActualCash('');
         fetchShiftData();
       } else {
@@ -648,7 +646,7 @@ export const ShiftRegisterView: React.FC = () => {
 
             <div className="flex gap-2 pt-2 no-print">
               <button
-                onClick={() => zReportData && printer.printZReport(zReportData)}
+                onClick={() => zReportData && requestPrint({ kind: 'zreport', shiftId: zReportData.shiftNumber })}
                 className="flex-1 py-2 bg-black text-white text-xs font-bold rounded cursor-pointer"
               >
                 Print Z-Report

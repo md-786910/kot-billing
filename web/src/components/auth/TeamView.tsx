@@ -25,11 +25,12 @@ interface DeviceRow {
   station: string | null;
   lastSeenAt: string | null;
   isCurrent: boolean;
+  printStation: boolean;
 }
 
 // Counter-only product: orders are taken at the counter, KOTs and bills are printed
 const ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'CASHIER'];
-const DEVICE_LABELS = { TERMINAL: 'Counter terminal', MOBILE: 'Phone', DISPLAY: 'Display' } as const;
+const DEVICE_LABELS = { TERMINAL: 'Counter computer', MOBILE: 'Staff phone', DISPLAY: 'Display' } as const;
 
 /** Admin: staff accounts and paired devices. */
 export function TeamView() {
@@ -56,6 +57,14 @@ export function TeamView() {
   const patchStaff = async (id: string, body: Record<string, unknown>) => {
     const res = await api('/api/v1/staff', { method: 'PATCH', body: { id, ...body } });
     if (!res.ok) return setError(res.error);
+    load();
+  };
+
+  // One counter computer with the thermal printer prints KOTs, bills and reports for every device
+  const setPrintStation = async (d: DeviceRow) => {
+    const res = await api('/api/v1/devices', { method: 'PATCH', body: { id: d.id, printStation: true } });
+    if (!res.ok) return setError(res.error);
+    if (d.isCurrent) await refreshAuth();
     load();
   };
 
@@ -109,11 +118,11 @@ export function TeamView() {
         <header className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-neutral-800">
           <div>
             <h2 className="text-lg font-bold text-white">Devices</h2>
-            <p className="text-sm text-neutral-400">Counter computers where staff sign in with their PIN.</p>
+            <p className="text-sm text-neutral-400">Counter computers and staff phones. The computer marked &ldquo;Prints for everyone&rdquo; prints all KOTs and bills.</p>
           </div>
           <div className="flex gap-2">
             {!thisDevice && <Button variant="secondary" onClick={() => setPairing('this')}><Monitor className="w-4 h-4" /> Pair this browser</Button>}
-            <Button onClick={() => setPairing('code')}><Plus className="w-4 h-4" /> Pair a computer</Button>
+            <Button onClick={() => setPairing('code')}><Plus className="w-4 h-4" /> Pair a device</Button>
           </div>
         </header>
         {devices.length === 0 && <p className="p-4 text-sm text-neutral-400">No devices paired yet.</p>}
@@ -125,12 +134,15 @@ export function TeamView() {
                 <Icon className="w-5 h-5 text-[#d4af37] shrink-0" />
                 <div className="flex-1 min-w-[180px]">
                   <p className="text-base font-semibold text-white">
-                    {d.name} {d.isCurrent && <Badge tone="gold">This device</Badge>}
+                    {d.name} {d.isCurrent && <Badge tone="gold">This device</Badge>} {d.printStation && <Badge tone="gold">Prints for everyone</Badge>}
                   </p>
                   <p className="text-sm text-neutral-400">
                     {DEVICE_LABELS[d.type]}{d.station ? ` · ${d.station}` : ''} · {d.lastSeenAt ? `Last seen ${new Date(d.lastSeenAt).toLocaleString()}` : 'Not used yet'}
                   </p>
                 </div>
+                {d.type === 'TERMINAL' && !d.printStation && (
+                  <Button variant="secondary" onClick={() => setPrintStation(d)}>Use for printing</Button>
+                )}
                 <Button variant="danger" onClick={() => revokeDevice(d)}>Revoke</Button>
               </li>
             );
@@ -275,7 +287,7 @@ function PairDialog({ mode, onClose, onPairedThis, onCodeCreated }: {
     return (
       <Modal title="Pairing code" onClose={onClose}>
         <p className="text-sm text-neutral-400">
-          On the counter computer, open Layali, choose <span className="text-white">Have a pairing code?</span> and enter:
+          On the computer, open Layali and choose <span className="text-white">Have a pairing code?</span>; on a phone, open the Layali app. Then enter:
         </p>
         <p className="my-5 text-center font-mono text-4xl font-bold tracking-[0.3em] text-[#d4af37]">{code.code}</p>
         <p className="text-sm text-neutral-500 text-center">Single use · expires at {new Date(code.expiresAt).toLocaleTimeString()}</p>
@@ -285,9 +297,15 @@ function PairDialog({ mode, onClose, onPairedThis, onCodeCreated }: {
   }
 
   return (
-    <Modal title={mode === 'this' ? 'Pair this browser' : 'Pair a counter computer'} onClose={onClose}>
+    <Modal title={mode === 'this' ? 'Pair this browser' : 'Pair a device'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
-        <Field label="Device name" value={form.name} onChange={set('name')} placeholder="e.g. Cashier desk" required autoFocus />
+        <Field label="Device name" value={form.name} onChange={set('name')} placeholder={form.type === 'MOBILE' ? 'e.g. Riya phone' : 'e.g. Cashier desk'} required autoFocus />
+        {mode === 'code' && (
+          <SelectField label="Type" value={form.type} onChange={set('type')}>
+            <option value="TERMINAL">{DEVICE_LABELS.TERMINAL}</option>
+            <option value="MOBILE">{DEVICE_LABELS.MOBILE}</option>
+          </SelectField>
+        )}
         <ErrorText>{error}</ErrorText>
         <Button type="submit" className="w-full" disabled={busy}>
           {busy ? 'Please wait…' : mode === 'this' ? 'Pair this browser' : 'Get pairing code'}

@@ -120,14 +120,22 @@ export function kotSlip(kot: KotPrint): string {
 </div>`;
 }
 
+/** Server void dockets prefix names ("[VOID CANCEL] Chicken Burger") and notes ("REASON: …"); print them plainly. */
+function plainVoidName(name: string): string {
+  return name.replace(/^\[[^\]]*\]\s*/, '');
+}
+function plainReason(note?: string): string {
+  return (note ?? '').replace(/^REASON:\s*/i, '');
+}
+
 /** Cancellation ticket for the kitchen after a void. */
 export function cancelSlip(kot: KotPrint): string {
   const station = STATION_LABEL[kot.station] ?? kot.station.toUpperCase();
   const items = kot.items
     .map(
       (it) =>
-        `<tr><td class="qty l">${esc(it.qty)}×</td><td class="l strike">${esc(it.name)}</td></tr>` +
-        (it.notes ? `<tr><td></td><td class="note">${esc(it.notes)}</td></tr>` : '')
+        `<tr><td class="qty l">${esc(it.qty)}×</td><td class="l strike">${esc(plainVoidName(it.name))}</td></tr>` +
+        (it.notes ? `<tr><td></td><td class="note">Reason: ${esc(plainReason(it.notes))}</td></tr>` : '')
     )
     .join('');
   return `<div class="slip" data-kind="cancel">
@@ -136,7 +144,6 @@ export function cancelSlip(kot: KotPrint): string {
   <div class="c s">${esc(kot.kotNumber ?? '')} · ${esc(when(kot.created))}</div>
   <hr><table>${items}</table><hr>
   <div class="b">DO NOT PREPARE</div>
-  ${kot.notes ? `<div class="s">${esc(kot.notes)}</div>` : ''}
 </div>`;
 }
 
@@ -216,7 +223,7 @@ export function zReportSlip(z: ZReportPrint, settings: PrintSettings): string {
   <table>
     ${row('Bills settled', esc(z.ordersCount))}
     ${row('Sales (items)', money(z.totalSales))}
-    ${row('Discounts', '-' + money(z.totalDiscount))}
+    ${row('Discounts', (z.totalDiscount > 0 ? '-' : '') + money(z.totalDiscount))}
     ${row('GST collected', money(z.totalTax))}
   </table><hr>
   <table>
