@@ -56,6 +56,19 @@ kot-billing/
 4. In **Lounge Admin**, enter the real lounge name, address, phone, **GSTIN** and GST rate. They are printed on every bill.
 5. In **Staff & Devices**: add cashiers/managers, then **Pair this browser** on the counter computer (or create a pairing code for another counter computer).
 
+### Deploy on Vercel (web + API)
+
+1. **Plan:** Vercel's free Hobby plan is for non-commercial use only; a restaurant needs **Pro** ($20/month per member).
+2. **Database:** create a MongoDB Atlas cluster in **Mumbai (ap-south-1)**. In *Network Access* allow `0.0.0.0/0` (Vercel's addresses change) and use a long random database password.
+3. **Import** the GitHub repo in Vercel and set **Root Directory = `web`** (framework: Next.js, detected automatically).
+4. **Environment variable:** `MONGODB_URI` (the Atlas connection string). Nothing else is needed: HTTPS cookies and client IPs are handled automatically on Vercel. `web/vercel.json` runs the functions in Mumbai (`bom1`), next to the database.
+5. Deploy, open the site and create the owner account. On staff phones, the server address is your Vercel URL (e.g. `https://layali-pos.vercel.app`) or your custom domain.
+
+How it behaves on Vercel:
+- Screens and phones check a tiny change counter every few seconds and reload data only when something changed. The print station checks for slips every 3 seconds.
+- Rough usage with 1 counter and 3 phones open for a 12-hour service: about 50,000–60,000 short server calls a day (roughly 1.5–2 million a month).
+- The restaurant needs internet. Keep a 4G backup router at the counter: if the line drops, orders cannot be saved, and slips print as soon as it is back.
+
 ### Printer (counter PC = print station)
 
 All printing goes through one **print station**: the counter computer with the thermal printer. Phones and other counters never print themselves; the server queues each slip and the print station prints it (also while its screen is locked).
@@ -78,6 +91,13 @@ All printing goes through one **print station**: the counter computer with the t
 cd mobile && npm install && npx expo start      # development
 ```
 In **Staff & Devices → Pair a device**, choose **Staff phone**, then enter the server address and the 6-digit code in the app. Staff sign in with their name + PIN. Everything printable from the phone (KOTs, bills, cancel slips, Z-report) prints at the print station.
+
+### Builds (GitHub Actions)
+
+- **Web** (`.github/workflows/web.yml`): on every change under `web/` it type-checks, lints (report only) and runs the production build. No secrets needed.
+- **Android APK** (`.github/workflows/android.yml`): pull requests are type-checked; every push to `master` that changes `mobile/` (or **Actions → Android APK → Run workflow**) builds `layali-pos-1.0.<run>.apk`. Download it from the run's **Artifacts** (kept 30 days) and install it on the staff phones.
+- The phone app needs **no env variables**: the server address is entered when a phone is paired.
+- **Release signing (one time):** run `scripts/create-android-key.sh`, then add the four `ANDROID_*` secrets it prints under *Settings → Secrets and variables → Actions*. Without them the APK is debug-signed (fine for testing; it cannot update a release-signed install). Back up the key: every future update must use it.
 
 ## Sign-in & security
 

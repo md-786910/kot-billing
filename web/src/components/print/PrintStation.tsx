@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { printHtml } from '@/lib/print/printer';
 import { renderPrintJob, PrintPayload } from '@/lib/print/render';
 
-const POLL_MS = 2000;
+// Slips print within ~3 s; each poll is one server call (keeps serverless usage low)
+const POLL_MS = 3000;
 
 interface ClaimedJob {
   id: string;

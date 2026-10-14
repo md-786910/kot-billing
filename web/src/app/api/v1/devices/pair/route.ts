@@ -11,7 +11,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 // Public: exchange a one-time pairing code (from Admin → Devices) for a device token
 export async function POST(req: NextRequest) {
   try {
-    if (!rateLimit(`pair:${clientIp(req)}`, 10) || !rateLimit('pair:all', 30)) {
+    if (!(await rateLimit(`pair:${clientIp(req)}`, 10)) || !(await rateLimit('pair:all', 30))) {
       return jsonError('Too many attempts. Please wait a few minutes.', 429);
     }
     await connectToDatabase();

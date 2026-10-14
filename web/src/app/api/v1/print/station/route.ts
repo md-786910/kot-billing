@@ -16,7 +16,11 @@ const MAX_ATTEMPTS = 3;
 async function stationDevice(req: NextRequest) {
   const auth = await getAuth(req);
   if (!auth.device?.printStation) return null;
-  await DeviceModel.updateOne({ _id: auth.device.id }, { lastSeenAt: new Date() });
+  // "Online" heartbeat; written at most every 10 s, not on every poll
+  await DeviceModel.updateOne(
+    { _id: auth.device.id, $or: [{ lastSeenAt: null }, { lastSeenAt: { $lt: new Date(Date.now() - 10_000) } }] },
+    { lastSeenAt: new Date() }
+  );
   return auth.device;
 }
 

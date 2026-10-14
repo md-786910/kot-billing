@@ -21,6 +21,8 @@ export async function GET(req: NextRequest) {
     const filter: any = {};
     if (status === 'open') filter.closed = false;
     else if (status === 'closed') filter.closed = true;
+    // Screens: running bills plus anything closed in the last 24 hours (keeps payloads small as history grows)
+    else if (status === 'recent') filter.$or = [{ closed: false }, { closedAt: { $gte: new Date(Date.now() - 24 * 3600_000) } }];
 
     const orders = await OrderModel.find(filter)
       .sort({ createdAt: -1 })

@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     if (!auth.device || auth.device.type === 'DISPLAY') {
       return jsonError('This device is not paired for staff sign-in', 401);
     }
-    if (!rateLimit(`pin:${auth.device.id}`, 15)) return jsonError('Too many attempts. Please wait a few minutes.', 429);
+    if (!(await rateLimit(`pin:${auth.device.id}`, 15))) return jsonError('Too many attempts. Please wait a few minutes.', 429);
 
     const body = await req.json();
     const userId = str(body.userId, 40);

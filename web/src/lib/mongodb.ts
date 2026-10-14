@@ -8,11 +8,11 @@ interface MongooseCache {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var mongooseCache: MongooseCache | undefined;
 }
 
-let cached: MongooseCache = global.mongooseCache || { conn: null, promise: null };
+const cached: MongooseCache = global.mongooseCache || { conn: null, promise: null };
 
 if (!global.mongooseCache) {
   global.mongooseCache = cached;
@@ -32,8 +32,10 @@ export async function connectToDatabase() {
   if (!cached.promise) {
     const opts: mongoose.ConnectOptions = {
       bufferCommands: false,
-      maxPoolSize: 50,
-      minPoolSize: 5,
+      // Small pools: on Vercel every function instance opens its own, and Atlas limits total connections
+      maxPoolSize: 10,
+      minPoolSize: 0,
+      maxIdleTimeMS: 60_000,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
       family: 4, // Use IPv4, skip IPv6 resolution delays

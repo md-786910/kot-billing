@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const password = typeof body.password === 'string' ? body.password : '';
     if (!username || !password) return jsonError('Enter your username and password', 400);
     // Per-username limit (accounts also lock after 5 failures) plus a global cap against spraying
-    if (!rateLimit(`login:${clientIp(req)}:${username}`) || !rateLimit('login:all', 100)) {
+    if (!(await rateLimit(`login:${clientIp(req)}:${username}`)) || !(await rateLimit('login:all', 100))) {
       return jsonError('Too many attempts. Please wait a few minutes.', 429);
     }
 

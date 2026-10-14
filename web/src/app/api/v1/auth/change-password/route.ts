@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await getAuth(req);
     if (!auth.user) return jsonError('Sign in required', 401);
-    if (!rateLimit(`change-password:${auth.user.id}`, 5)) return jsonError('Too many attempts. Please wait a few minutes.', 429);
+    if (!(await rateLimit(`change-password:${auth.user.id}`, 5))) return jsonError('Too many attempts. Please wait a few minutes.', 429);
 
     const body = await req.json();
     const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : '';

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SettingsModel } from '@/models/Settings';
 import { audit, jsonError, requireAuth, serverError, str } from '@/lib/auth';
+import { broadcastRealtimeEvent } from '@/lib/realtime';
 
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -73,6 +74,7 @@ export async function PATCH(req: NextRequest) {
 
     const doc = await SettingsModel.findOneAndUpdate({}, { $set: update }, { upsert: true, returnDocument: 'after' }).lean();
     await audit(guard.auth, 'settings.updated', null, update);
+    broadcastRealtimeEvent('SETTINGS_UPDATED');
     return NextResponse.json({ success: true, data: publicSettings(doc as unknown as Record<string, unknown> | null) });
   } catch (error) {
     return serverError(error);

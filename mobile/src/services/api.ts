@@ -150,6 +150,12 @@ export function errorStatus(err: unknown): number {
   return err instanceof ApiError ? err.status : 0;
 }
 
+/** Server data version; it changes whenever any device changes orders, KOTs, tables or bookings */
+export async function fetchSyncVersion(): Promise<number> {
+  const json = await request<{ version: number }>('/api/v1/sync');
+  return json.data?.version ?? 0;
+}
+
 // ---------- Auth & devices ----------
 
 export async function fetchAuthMe(): Promise<AuthState> {

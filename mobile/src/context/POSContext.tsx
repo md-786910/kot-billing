@@ -36,6 +36,7 @@ import {
   setSessionToken,
   setOnUnauthorized,
   PaymentLine,
+  fetchSyncVersion,
 } from '../services/api';
 import { readAllStored, writeStored } from '../services/storage';
 
@@ -55,7 +56,10 @@ export interface ActionResult {
 
 const IDLE_LOCK_MS = 2 * 60_000;
 const IDLE_CHECK_MS = 5_000;
-const POLL_MS = 10_000;
+// Cheap version check every few seconds; the four data lists reload only when something changed
+// (plus a full reload every minute as a safety net). Keeps server calls low on serverless hosting.
+const SYNC_MS = 5_000;
+const FULL_REFRESH_MS = 60_000;
 const DEFAULT_TABLE = 'Table 1';
 
 interface PingStats {
@@ -376,8 +380,28 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Poll only while a staff member is signed in
   useEffect(() => {
     if (authStatus !== 'ready') return;
+    let lastVersion: number | null = null;
+    let lastFull = Date.now();
+    let busy = false;
     refreshData();
-    const id = setInterval(refreshData, POLL_MS);
+    const id = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const version = await fetchSyncVersion();
+        const stale = Date.now() - lastFull > FULL_REFRESH_MS;
+        if ((lastVersion !== null && version !== lastVersion) || stale) {
+          lastFull = Date.now();
+          await refreshData();
+        }
+        lastVersion = version;
+        setIsConnected(true);
+      } catch (err) {
+        if (errorStatus(err) === 0) setIsConnected(false);
+      } finally {
+        busy = false;
+      }
+    }, SYNC_MS);
     return () => clearInterval(id);
   }, [authStatus, refreshData]);
 

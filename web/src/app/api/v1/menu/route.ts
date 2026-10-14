@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { audit, requireAuth, str } from '@/lib/auth';
+import { broadcastRealtimeEvent } from '@/lib/realtime';
 import { connectToDatabase } from '@/lib/mongodb';
 import { MenuItemModel } from '@/models/MenuItem';
 
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
       isAvailable: true,
     });
     await audit(guard.auth, 'menu.item_added', String(newItem._id), { name, price, station: body.station, category });
+    broadcastRealtimeEvent('MENU_UPDATED');
 
     return NextResponse.json({ success: true, data: newItem });
   } catch (error: any) {
@@ -96,6 +98,7 @@ export async function PATCH(req: NextRequest) {
     }
     if (!updated) return NextResponse.json({ success: false, error: 'Menu item not found' }, { status: 404 });
 
+    broadcastRealtimeEvent('MENU_UPDATED');
     await audit(guard.auth, price !== undefined ? 'menu.price_changed' : 'menu.stock_changed', String(updated._id), {
       name: updated.name, ...updateFields,
     });

@@ -1,1 +1,4 @@
 layali-kot-&-restaurant-pos/
+# Android signing keys never go in the repo
+*.keystore
+*.jks

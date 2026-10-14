@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { UserModel, UserRole } from '@/models/User';
 import { DeviceModel, DeviceStation, DeviceType } from '@/models/Device';
@@ -60,7 +61,7 @@ function readDeviceToken(req: NextRequest): string | null {
 
 /** Client address for rate limiting. Forwarded headers are only trusted behind a proxy (TRUST_PROXY=true). */
 export function clientIp(req: NextRequest): string {
-  if (process.env.TRUST_PROXY !== 'true') return 'direct';
+  if (process.env.TRUST_PROXY !== 'true' && process.env.VERCEL !== '1') return 'direct';
   return req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip') || 'direct';
 }
 
@@ -219,17 +220,27 @@ export async function revokeDeviceSessions(deviceId: string) {
 // ---------- Brute-force protection ----------
 
 declare global {
-  var authRateLimits: Map<string, number[]> | undefined;
+  var rateLimitIndexReady: Promise<string> | undefined;
 }
-const attempts: Map<string, number[]> = (global.authRateLimits ??= new Map());
 
-/** Sliding-window limiter (per server process). Returns false when the key is over its limit. */
-export function rateLimit(key: string, limit = 10, windowMs = 5 * 60_000): boolean {
-  const now = Date.now();
-  const recent = (attempts.get(key) ?? []).filter((t) => now - t < windowMs);
-  recent.push(now);
-  attempts.set(key, recent);
-  return recent.length <= limit;
+/**
+ * Fixed-window limiter stored in MongoDB, so every server instance (e.g. Vercel functions) shares the count.
+ * Returns false when the key is over its limit for the current window.
+ */
+export async function rateLimit(key: string, limit = 10, windowMs = 5 * 60_000): Promise<boolean> {
+  await connectToDatabase();
+  const col = mongoose.connection.collection<{ _id: string; count: number; expiresAt: Date }>('ratelimits');
+  // Old windows delete themselves
+  global.rateLimitIndexReady ??= col.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await global.rateLimitIndexReady;
+  const window = Math.floor(Date.now() / windowMs);
+  const res = await col
+    .findOneAndUpdate(
+      { _id: `${key}:${window}` },
+      { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date((window + 1) * windowMs + 60_000) } },
+      { upsert: true, returnDocument: 'after' }
+    );
+  return (res?.count ?? 1) <= limit;
 }
 
 export function isLocked(user: { lockedUntil?: Date | null }): boolean {
@@ -275,7 +286,7 @@ export async function authorizeOrApprove(
   if (!PIN_PATTERN.test(pin)) {
     return { ok: false, response: jsonError('Manager PIN required', 403) };
   }
-  if (!rateLimit(`approve:${auth.device?.id ?? clientIp(req)}`, 5)) {
+  if (!(await rateLimit(`approve:${auth.device?.id ?? clientIp(req)}`, 5))) {
     return { ok: false, response: jsonError('Too many attempts. Please wait a few minutes.', 429) };
   }
 

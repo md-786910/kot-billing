@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   MenuItem,
   TableInfo,
@@ -64,6 +64,9 @@ function mapOrder(o: any): Order {
   };
 }
 
+/** How often screens check for changes made on other devices */
+const SYNC_INTERVAL_MS = 4000;
+
 export default function POSHomePage() {
   return (
     <AuthProvider>
@@ -83,6 +86,12 @@ function POSApp() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  // Read inside the data loader without re-creating it
+  const soundRef = useRef(settings.soundAlerts);
+  const knownKotIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    soundRef.current = settings.soundAlerts;
+  }, [settings.soundAlerts]);
 
   const visibleTabs = useMemo(() => allowedTabs(auth.permissions), [auth.permissions]);
   const [selectedTab, setActiveTab] = useState<WebTabKey>('order');
@@ -158,16 +167,21 @@ function POSApp() {
       }
 
       // Fetch orders
-      const ordersRes = await fetch('/api/v1/orders?status=all');
+      const ordersRes = await fetch('/api/v1/orders?status=recent');
       const ordersJson = await ordersRes.json();
       if (ordersJson.success && ordersJson.data) {
         setOrders(ordersJson.data.map(mapOrder));
       }
 
       // Fetch KOTs
-      const kotsRes = await fetch('/api/v1/kots?status=All');
+      const kotsRes = await fetch('/api/v1/kots?status=RECENT');
       const kotsJson = await kotsRes.json();
       if (kotsJson.success && kotsJson.data) {
+        // Chime when tickets punched elsewhere (phones, other counters) arrive
+        const ids = new Set<string>(kotsJson.data.map((k: any) => String(k.kotNumber || k._id)));
+        const known = knownKotIdsRef.current;
+        if (known && soundRef.current && [...ids].some((id) => !known.has(id) && id.startsWith('KOT-'))) playOrderChime();
+        knownKotIdsRef.current = ids;
         setKots(
           kotsJson.data.map((k: any) => ({
             id: k.kotNumber || k._id,
@@ -226,52 +240,33 @@ function POSApp() {
     refreshAllData();
   }, [refreshAllData]);
 
-  // Connect to SSE Real-time updates
+  // Live updates: a tiny version check every few seconds (works on serverless hosting such as Vercel);
+  // the full data reloads only when something changed. Paused while the tab is hidden.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    let eventSource: EventSource | null = null;
-    try {
-      eventSource = new EventSource('/api/v1/realtime');
-
-      eventSource.onmessage = (event) => {
+    let lastVersion: number | null = null;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (document.visibilityState === 'visible') {
         try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'KOT_CREATED') {
-            if (settings.soundAlerts) playOrderChime();
-            refreshAllData();
-          } else if (
-            data.type === 'ORDER_CREATED' ||
-            data.type === 'ORDER_UPDATED' ||
-            data.type === 'KOT_STATUS_CHANGED' ||
-            data.type === 'TABLE_STATUS_CHANGED' ||
-            data.type === 'TABLE_TRANSFERRED' ||
-            data.type === 'ITEM_VOIDED' ||
-            data.type === 'SHISHA_TIMER_UPDATED' ||
-            data.type === 'SHIFT_OPENED' ||
-            data.type === 'SHIFT_CLOSED' ||
-            data.type === 'BILL_SETTLED'
-          ) {
-            refreshAllData();
+          const res = await fetch('/api/v1/sync');
+          const json = await res.json();
+          if (json.success) {
+            if (lastVersion !== null && json.data.version !== lastVersion) await refreshAllData();
+            lastVersion = json.data.version;
           }
         } catch {
-          // ignore non-json
+          // Offline for a moment: try again on the next tick
         }
-      };
-
-      eventSource.onerror = () => {
-        // EventSource will auto-reconnect
-      };
-    } catch {
-      // ignore
-    }
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
       }
+      if (!stopped) timer = setTimeout(tick, SYNC_INTERVAL_MS);
     };
-  }, [settings.soundAlerts, refreshAllData]);
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [refreshAllData]);
 
   // Order submission
   const handleOrderSubmit = async (orderData: {
