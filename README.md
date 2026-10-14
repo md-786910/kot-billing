@@ -94,7 +94,6 @@ In **Staff & Devices → Pair a device**, choose **Staff phone**, then enter the
 
 ### Builds (GitHub Actions)
 
-- **Web** (`.github/workflows/web.yml`): on every change under `web/` it type-checks, lints (report only) and runs the production build. No secrets needed.
 - **Android APK** (`.github/workflows/android.yml`): pull requests are type-checked; every push to `master` that changes `mobile/` (or **Actions → Android APK → Run workflow**) builds `layali-pos-1.0.<run>.apk`. Download it from the run's **Artifacts** (kept 30 days) and install it on the staff phones.
 - The phone app needs **no env variables**: the server address is entered when a phone is paired.
 - **Release signing (one time):** run `scripts/create-android-key.sh`, then add the four `ANDROID_*` secrets it prints under *Settings → Secrets and variables → Actions*. Without them the APK is debug-signed (fine for testing; it cannot update a release-signed install). Back up the key: every future update must use it.
