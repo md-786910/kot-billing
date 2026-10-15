@@ -17,6 +17,7 @@ import { MoreScreen, MorePage, MORE_PAGE_TITLES } from './src/screens/MoreScreen
 import { COLORS, SPACE } from './src/constants/theme';
 import { Banner } from './src/ui';
 import { TABLET_MIN_SIDE } from './src/hooks/useGrid';
+import { useAppUpdates } from './src/hooks/useAppUpdates';
 
 // Lists and forms on More pages stay readable on wide tablet screens
 const PAGE_MAX_WIDTH = 760;
@@ -90,6 +91,8 @@ function MainApp() {
 
 function Root() {
   const { authStatus, markActivity } = usePOS();
+  // A downloaded update is applied on the lock or pairing screen, never mid-order
+  useAppUpdates(authStatus === 'locked' || authStatus === 'unpaired');
 
   // The signed-in app draws its header and bottom nav under the system bars (they pad themselves);
   // the full-screen boot, pairing and lock screens stay inside them
