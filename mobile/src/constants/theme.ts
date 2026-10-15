@@ -103,6 +103,3 @@ export const ROLE_LABELS: Record<string, string> = {
 export function roleLabel(role: string): string {
   return ROLE_LABELS[role] ?? role;
 }
-
-/** Example address shown as a placeholder only — never used as a default */
-export const SERVER_URL_PLACEHOLDER = 'http://192.168.1.50:3001';

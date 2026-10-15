@@ -146,6 +146,9 @@ OrderSchema.index({ tableName: 1, closed: 1 });
 // A table can only have one running bill
 OrderSchema.index({ tableName: 1 }, { unique: true, partialFilterExpression: { closed: false }, name: 'one_open_order_per_table' });
 OrderSchema.index({ status: 1, createdAt: -1 });
+// "Recent" screens ($or with closedAt needs its own index) and live shift totals
+OrderSchema.index({ closedAt: -1 });
+OrderSchema.index({ status: 1, closedAt: -1 });
 
 export const OrderModel: Model<IOrder> =
   mongoose.models.Order || mongoose.model<IOrder>('Order', OrderSchema);

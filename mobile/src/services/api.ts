@@ -2,7 +2,9 @@ import { TableItem, MenuItem, Order, KOT, StaffUser, AuthDevice, AuthState } fro
 
 // ---------- Client state ----------
 
-let serverUrl = '';
+/** The production server every phone talks to */
+export const SERVER_URL = 'https://kot-billing.vercel.app';
+
 let deviceToken: string | null = null;
 let sessionToken: string | null = null;
 let unauthorizedHandler: ((sessionTokenUsed: string | null) => void) | null = null;
@@ -20,21 +22,6 @@ export function newIdempotencyKey(): string {
 /** The server's reply when the same idempotencyKey is still being processed */
 export function isStillProcessing(status: number | undefined, message: string | undefined): boolean {
   return status === 409 && /already being processed/i.test(message ?? '');
-}
-
-/** Adds http:// when no scheme is given and strips trailing slashes */
-export function normalizeServerUrl(url: string): string {
-  const trimmed = url.trim().replace(/\/+$/, '');
-  if (!trimmed) return '';
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-}
-
-export function setServerBaseUrl(url: string) {
-  serverUrl = normalizeServerUrl(url);
-}
-
-export function getServerBaseUrl() {
-  return serverUrl;
 }
 
 export function setDeviceToken(token: string | null) {
@@ -93,11 +80,9 @@ interface RequestOptions {
 }
 
 export async function request<T = unknown>(path: string, options: RequestOptions = {}): Promise<ApiEnvelope<T>> {
-  if (!serverUrl) throw new ApiError(0, 'Server address is not set');
-
   const { method = 'GET', body, skipUnauthorizedHook = false, timeoutMs = REQUEST_TIMEOUT_MS } = options;
-  // Server, device token and session are all read before the first await: callers rely on this to
-  // send a last request to the old server just before switching or clearing them.
+  // Device token and session are read before the first await: callers rely on this to
+  // send a last request with them just before clearing them.
   const tokenUsed = options.sessionTokenOverride !== undefined ? options.sessionTokenOverride : sessionToken;
 
   const headers: Record<string, string> = { 'X-Client': 'mobile', Accept: 'application/json' };
@@ -110,7 +95,7 @@ export async function request<T = unknown>(path: string, options: RequestOptions
 
   let res: Response;
   try {
-    res = await fetch(`${serverUrl}${path}`, {
+    res = await fetch(`${SERVER_URL}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -118,9 +103,9 @@ export async function request<T = unknown>(path: string, options: RequestOptions
     });
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      throw new ApiError(0, 'The server did not respond. Check Wi-Fi and the server address.');
+      throw new ApiError(0, 'The server did not respond. Check the internet connection.');
     }
-    throw new ApiError(0, 'Cannot reach the server. Check Wi-Fi and the server address.');
+    throw new ApiError(0, 'Cannot reach the server. Check the internet connection.');
   } finally {
     clearTimeout(timer);
   }

@@ -42,7 +42,7 @@ const KOTSchema = new Schema<IKOT>(
   {
     kotNumber: { type: String, required: true, unique: true, index: true },
     orderId: { type: String, required: true, index: true },
-    orderNumber: { type: String, required: true, index: true },
+    orderNumber: { type: String, required: true },
     tableName: { type: String, required: true, index: true },
     guestName: { type: String, default: '' },
     station: {
@@ -71,6 +71,8 @@ const KOTSchema = new Schema<IKOT>(
 KOTSchema.index({ station: 1, status: 1, createdAt: -1 });
 KOTSchema.index({ status: 1, createdAt: -1 });
 KOTSchema.index({ orderNumber: 1 });
+// RECENT list: the createdAt branch of its $or needs its own index
+KOTSchema.index({ createdAt: -1 });
 
 export const KOTModel: Model<IKOT> =
   mongoose.models.KOT || mongoose.model<IKOT>('KOT', KOTSchema);
