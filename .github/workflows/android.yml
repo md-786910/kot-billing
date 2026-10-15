@@ -1,7 +1,8 @@
 name: Android APK
 
 # Pull requests: type-check only. Pushes to master and manual runs: build the staff-phone APK.
-# The app needs no build-time env; each phone gets the server address when it is paired.
+# Pushes to master also publish an over-the-air update (EAS Update): installed APKs with the same
+# native code download the new JS on launch and run it on the next start.
 on:
   push:
     branches: [master]
@@ -34,6 +35,46 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npx tsc --noEmit
+
+  update:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # Updates stay off until the Expo project is linked and its token is in GitHub Secrets
+      - name: Check EAS Update setup
+        id: setup
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::warning::No EXPO_TOKEN secret: skipping the over-the-air update."
+          elif ! grep -q '"projectId"' app.json; then
+            echo "::warning::app.json has no extra.eas.projectId (run npx eas-cli init): skipping the over-the-air update."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.setup.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Publish update
+        if: steps.setup.outputs.ready == 'true'
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: npx --yes eas-cli@latest update --channel production --environment production --message "${MESSAGE%%$'\n'*}" --non-interactive
 
   apk:
     needs: check

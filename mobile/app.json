@@ -26,6 +26,12 @@
     "plugins": [
       "expo-secure-store",
       "expo-screen-orientation"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "84265a6c-1244-43a7-aa75-85a5bcd7ebd9"
+      }
+    },
+    "owner": "ashif_01"
   }
 }
