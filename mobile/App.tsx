@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, SafeAreaView, StatusBar, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, Dimensions } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { POSProvider, usePOS } from './src/context/POSContext';
 import { Header } from './src/components/Header';
 import { BottomNav, TabKey } from './src/components/BottomNav';
@@ -13,6 +16,10 @@ import { ShishaScreen } from './src/screens/ShishaScreen';
 import { MoreScreen, MorePage, MORE_PAGE_TITLES } from './src/screens/MoreScreen';
 import { COLORS, SPACE } from './src/constants/theme';
 import { Banner } from './src/ui';
+import { TABLET_MIN_SIDE } from './src/hooks/useGrid';
+
+// Lists and forms on More pages stay readable on wide tablet screens
+const PAGE_MAX_WIDTH = 760;
 
 const TAB_TITLES: Record<TabKey, string> = {
   tables: 'Tables',
@@ -65,7 +72,9 @@ function MainApp() {
         {activeTab === 'kots' && <KOTsScreen />}
         {activeTab === 'shisha' && <ShishaScreen />}
         {activeTab === 'more' && (
-          <MoreScreen page={morePage} onPageChange={setMorePage} onOpenTable={handleSelectTable} />
+          <View style={styles.page}>
+            <MoreScreen page={morePage} onPageChange={setMorePage} onOpenTable={handleSelectTable} />
+          </View>
         )}
         {toast && (
           <View style={styles.toast} pointerEvents="box-none" testID="toast">
@@ -82,9 +91,13 @@ function MainApp() {
 function Root() {
   const { authStatus, markActivity } = usePOS();
 
+  // The signed-in app draws its header and bottom nav under the system bars (they pad themselves);
+  // the full-screen boot, pairing and lock screens stay inside them
+  const fullScreen = authStatus !== 'ready';
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bgPrimary} />
+    <SafeAreaView style={styles.container} edges={fullScreen ? ['top', 'bottom', 'left', 'right'] : ['left', 'right']}>
+      <StatusBar style="light" />
       {/* Every touch resets the inactivity auto-lock timer */}
       <View style={styles.container} onTouchStart={markActivity}>
         {authStatus === 'booting' ? (
@@ -105,11 +118,24 @@ function Root() {
   );
 }
 
+// Phones stay upright; tablets rotate freely
+function useOrientationPolicy() {
+  useEffect(() => {
+    const { width, height } = Dimensions.get('screen');
+    const isTablet = Math.min(width, height) >= TABLET_MIN_SIDE;
+    const apply = isTablet ? ScreenOrientation.unlockAsync() : ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    apply.catch(() => {});
+  }, []);
+}
+
 export default function App() {
+  useOrientationPolicy();
   return (
-    <POSProvider>
-      <Root />
-    </POSProvider>
+    <SafeAreaProvider>
+      <POSProvider>
+        <Root />
+      </POSProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -120,6 +146,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  page: {
+    flex: 1,
+    width: '100%',
+    maxWidth: PAGE_MAX_WIDTH,
+    alignSelf: 'center',
   },
   toast: {
     position: 'absolute',

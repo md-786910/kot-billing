@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACE, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { usePrintStatus } from '../hooks/usePrintStatus';
@@ -21,12 +22,14 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const { isConnected, currentStaff, lock, refreshData } = usePOS();
   const { problem, message, tone } = usePrintStatus();
   const [showQueue, setShowQueue] = useState(false);
+  const insets = useSafeAreaInsets();
   // While offline the printer status is stale, and the offline banner already explains why
   const printProblem = isConnected && problem ? message : null;
   const staffLine = currentStaff ? `${currentStaff.name} · ${roleLabel(currentStaff.role)}` : '';
 
   return (
-    <View style={styles.wrap}>
+    // The header colour runs up under the status bar
+    <View style={[styles.wrap, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={styles.titles}>
           <AppText variant="title" numberOfLines={1}>

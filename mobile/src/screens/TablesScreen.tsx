@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { TableCard } from '../components/TableCard';
 import { COLORS, SPACE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
+import { useContentWidth } from '../hooks/useGrid';
 import { AppText, Chip, ChipRow, EmptyState } from '../ui';
 
 interface TablesScreenProps {
@@ -14,7 +15,7 @@ const GAP = SPACE.md;
 
 export const TablesScreen: React.FC<TablesScreenProps> = ({ onSelectTable }) => {
   const { tables, orders, selectedFloor, setSelectedFloor } = usePOS();
-  const { width } = useWindowDimensions();
+  const width = useContentWidth();
   const columns = width >= 900 ? 4 : width >= 600 ? 3 : 2;
   const cardWidth = Math.floor((width - PADDING * 2 - GAP * (columns - 1)) / columns);
 
