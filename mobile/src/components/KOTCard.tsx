@@ -12,7 +12,7 @@ interface KOTCardProps {
   onAdvance?: (kot: KOT, status: KOTStatus) => void;
   /** This ticket's status update is running */
   updating?: boolean;
-  /** Reprint at the counter printer; shown on every ticket (cancelled ones reprint as cancel slips) */
+  /** Print the ticket's slip at the counter printer; shown on every ticket (cancelled ones print as cancel slips) */
   onReprint?: (kot: KOT) => void;
   /** This ticket's reprint request is running */
   reprinting?: boolean;
@@ -104,6 +104,7 @@ export const KOTCard: React.FC<KOTCardProps> = ({ kot, now, onAdvance, updating,
       ) : null}
 
       {next || onReprint ? (
+        // The next step gets a full-width button; Served and Print slip sit underneath so nothing is squeezed
         <View style={styles.actions}>
           {next && onAdvance ? (
             <Button
@@ -112,33 +113,35 @@ export const KOTCard: React.FC<KOTCardProps> = ({ kot, now, onAdvance, updating,
               icon={next.icon}
               onPress={() => onAdvance(kot, next.status)}
               loading={updating}
-              style={styles.flex}
+              fullWidth
               testID={`advance-${number}`}
             />
           ) : null}
-          {canSkipToServed && onAdvance ? (
-            <Button
-              label="Served"
-              variant="ghost"
-              icon="check"
-              onPress={() => onAdvance(kot, 'SERVED')}
-              disabled={updating}
-              testID={`served-${number}`}
-              accessibilityLabel={`Mark ${number} served`}
-            />
-          ) : null}
-          {onReprint ? (
-            <Button
-              label="Reprint"
-              variant="ghost"
-              icon="printer"
-              onPress={() => onReprint(kot)}
-              loading={reprinting}
-              disabled={reprintDisabled}
-              testID={`reprint-${number}`}
-              accessibilityLabel={`Reprint ${number}`}
-            />
-          ) : null}
+          <View style={styles.secondaryActions}>
+            {canSkipToServed && onAdvance ? (
+              <Button
+                label="Served"
+                variant="ghost"
+                icon="check"
+                onPress={() => onAdvance(kot, 'SERVED')}
+                disabled={updating}
+                testID={`served-${number}`}
+                accessibilityLabel={`Mark ${number} served`}
+              />
+            ) : null}
+            {onReprint ? (
+              <Button
+                label="Print slip"
+                variant="ghost"
+                icon="printer"
+                onPress={() => onReprint(kot)}
+                loading={reprinting}
+                disabled={reprintDisabled}
+                testID={`reprint-${number}`}
+                accessibilityLabel={`Print slip for ${number}`}
+              />
+            ) : null}
+          </View>
         </View>
       ) : null}
     </Card>
@@ -161,5 +164,6 @@ const styles = StyleSheet.create({
   qty: { minWidth: 28 },
   struck: { textDecorationLine: 'line-through' },
   notes: { marginTop: SPACE.sm },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: SPACE.sm, marginTop: SPACE.md },
+  actions: { gap: SPACE.xs, marginTop: SPACE.md },
+  secondaryActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACE.sm },
 });

@@ -4,6 +4,7 @@ import { Alert } from '../ui/alert';
 import { KOTCard } from '../components/KOTCard';
 import { COLORS, SPACE } from '../constants/theme';
 import { useGrid } from '../hooks/useGrid';
+import { usePrintStatus } from '../hooks/usePrintStatus';
 import { usePOS } from '../context/POSContext';
 import { errorMessage } from '../services/api';
 import { requestKotReprint } from '../services/printApi';
@@ -34,8 +35,9 @@ export const KOTsScreen: React.FC = () => {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const canServe = can('kot.update');
-  const canReprint = can('order.create');
+  const canReprint = can('order.create') || can('kot.update');
   const [reprintingId, setReprintingId] = useState<string | null>(null);
+  const { status: printStatus } = usePrintStatus();
   const reprintingRef = useRef(false);
 
   // Keep the age badges current between data refreshes
@@ -89,9 +91,16 @@ export const KOTsScreen: React.FC = () => {
     const number = kot.kotNumber ?? kot.id;
     try {
       await requestKotReprint(number);
+      const station = printStatus?.station;
+      const slip = kot.status === 'CANCELLED' ? `The cancel slip for ${number}` : `The slip for ${number}`;
+      // Say plainly when the slip can't print yet, so nobody waits at the printer
       Alert.alert(
-        'Sent to the counter printer',
-        kot.status === 'CANCELLED' ? `The cancel slip for ${number} is printing at the counter.` : `${number} is printing at the counter.`
+        'Slip sent to the counter printer',
+        station && !station.configured
+          ? `${slip} is queued, but no counter printer is set. Ask the owner to choose one in Devices.`
+          : station && !station.online
+          ? `${slip} is queued. The counter printer is offline; it will print when it's back.`
+          : `${slip} is printing at the counter.`
       );
     } catch (err) {
       Alert.alert("Couldn't reprint", errorMessage(err, 'Try again.'));

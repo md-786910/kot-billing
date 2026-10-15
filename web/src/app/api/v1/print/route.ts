@@ -58,10 +58,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const kind = str(body.kind, 10);
-    const permission = kind === 'bill' ? 'bill.settle' : kind === 'zreport' ? 'shift.manage' : 'order.create';
+    // A KOT slip can be printed by anyone who takes orders or works the tickets (kitchen, bar, shisha)
+    const permission = kind === 'bill' ? 'bill.settle' : kind === 'zreport' ? 'shift.manage' : kind === 'kot' ? 'data.read' : 'order.create';
     const guard = await requireAuth(req, permission);
     if (!guard.ok) return guard.response;
     const { auth } = guard;
+    if (kind === 'kot' && !auth.permissions.includes('order.create') && !auth.permissions.includes('kot.update')) {
+      return jsonError('You do not have permission for this action', 403);
+    }
 
     if (kind === 'bill') {
       const id = str(body.orderId, 40);
