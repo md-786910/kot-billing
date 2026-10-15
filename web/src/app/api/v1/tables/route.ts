@@ -35,7 +35,7 @@ export async function PATCH(req: NextRequest) {
     const updated = await TableModel.findOneAndUpdate(
       query,
       { $set: { ...(status && { status }), ...(currentOrderId !== undefined && { currentOrderId }) } },
-      { new: true }
+      { returnDocument: 'after' }
     ).lean();
 
     if (!updated) {
