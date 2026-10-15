@@ -87,9 +87,9 @@ export async function POST(req: NextRequest) {
       );
       broadcastRealtimeEvent('TABLE_STATUS_CHANGED', { name: order.tableName, status: 'VACANT' });
 
-      // Cancel all active KOTs for this order
+      // Cancel all active KOTs for this order (Ready ones too, so nothing is left waiting to be served)
       await KOTModel.updateMany(
-        { orderId: order._id.toString(), status: { $in: ['NEW', 'PREPARING'] } },
+        { orderId: order._id.toString(), status: { $in: ['NEW', 'PREPARING', 'READY'] } },
         { status: 'CANCELLED', notes: `ORDER CANCELLED: ${voidReason}` }
       );
 

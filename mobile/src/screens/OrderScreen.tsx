@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Alert } from '../ui/alert';
 import { Feather } from '@expo/vector-icons';
 import { MenuItemCard } from '../components/MenuItemCard';
@@ -13,10 +13,10 @@ import { MobileBillingModal } from '../components/MobileBillingModal';
 import { COLORS, RADIUS, SPACE, TOUCH, TYPE, stationColors } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { usePrintStatus } from '../hooks/usePrintStatus';
-import { useGrid } from '../hooks/useGrid';
+import { useContentWidth, useGrid } from '../hooks/useGrid';
 import { errorMessage } from '../services/api';
 import { requestBillPrint } from '../services/printApi';
-import { OrderItem, MenuItem } from '../types';
+import { Order, OrderItem, MenuItem } from '../types';
 import {
   ActionTile,
   AppText,
@@ -38,6 +38,9 @@ interface OrderScreenProps {
 }
 
 type OrderView = 'menu' | 'running';
+
+/** Content width (dp) from which the bill panel sits beside the menu (tablet landscape and up) */
+const SPLIT_MIN_WIDTH = 840;
 
 export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
   const {
@@ -139,8 +142,12 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
 
   // Bill slip for the guest, printed at the counter (phones never print themselves)
   const { status: printStatus } = usePrintStatus();
-  // One column on phones, two or more on tablets
-  const menuGrid = useGrid(260, SPACE.lg, SPACE.sm);
+  // Wide screens show the menu and the bill side by side; narrower ones switch between them
+  const contentWidth = useContentWidth();
+  const split = contentWidth >= SPLIT_MIN_WIDTH;
+  const panelWidth = Math.min(420, Math.max(340, Math.round(contentWidth * 0.38)));
+  // One column on phones, two or more on tablets (sized to the menu pane when split)
+  const menuGrid = useGrid(260, SPACE.lg, SPACE.sm, split ? contentWidth - panelWidth : undefined);
   const [printingBill, setPrintingBill] = useState(false);
   const printingBillRef = useRef(false);
   const printBill = async () => {
@@ -180,188 +187,254 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
       ].filter(Boolean)
     : [];
 
-  return (
-    <View style={styles.container}>
-      {/* Table status, Menu | Ordered switch, and table actions (the Header already shows the table name) */}
-      <View style={styles.top}>
-        <AppText variant="caption" tone={activeOrder ? 'secondary' : 'muted'} money numberOfLines={1} testID="order-status">
-          {statusLine}
-        </AppText>
-
-        {activeOrder ? (
-          <Segmented<OrderView>
-            value={showRunning ? 'running' : 'menu'}
-            onChange={setActiveTab}
-            options={[
-              { key: 'menu', label: 'Menu', testID: 'seg-menu' },
-              { key: 'running', label: `Ordered (${liveItemCount})`, testID: 'seg-ordered' },
-            ]}
-          />
-        ) : null}
-
-        {/* Bill, Print bill, Move, Merge and Void act on the table's bill, so they live on the Ordered tab;
-            the Menu tab keeps the full height for adding items */}
-        {showRunning && actionTiles.length > 0 ? <View style={styles.tiles}>{actionTiles}</View> : null}
-      </View>
-
-      {showRunning && activeOrder ? (
-        /* Items already sent for this table */
-        <View style={styles.flex}>
-          <ScrollView style={styles.flex} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-            {activeOrder.items.length === 0 ? (
-              <EmptyState icon="clipboard" title="Nothing ordered yet" hint="Items show here once they're sent to the kitchen." />
-            ) : (
-              activeOrder.items.map((it, idx) => {
-                const station = stationColors(it.station);
-                return (
-                  <View key={idx} style={styles.orderedRow} testID={`ordered-item-${idx}`}>
-                    <View style={[styles.flex, styles.orderedInfo, it.isVoided && styles.voided]}>
-                      <AppText variant="bodyStrong" tone={it.isVoided ? 'muted' : 'primary'} style={it.isVoided && styles.strike}>
-                        {it.qty}× {it.name}
-                      </AppText>
-                      <View style={styles.badges}>
-                        <Badge label={station.short} fg={station.fg} bg={station.bg} />
-                        {it.isVoided ? <Badge label="Voided" fg={COLORS.danger} bg={COLORS.dangerBg} /> : null}
-                      </View>
-                      {it.notes ? (
-                        <AppText variant="caption" tone="secondary">
-                          {it.notes}
-                        </AppText>
-                      ) : null}
-                      {it.isVoided && it.voidReason ? (
-                        <AppText variant="caption" tone="muted">
-                          Reason: {it.voidReason}
-                        </AppText>
-                      ) : null}
-                    </View>
-                    <View style={styles.orderedRight}>
-                      <AppText
-                        variant="bodyStrong"
-                        money
-                        tone={it.isVoided ? 'muted' : 'primary'}
-                        style={it.isVoided && styles.strike}
-                      >
-                        {formatMoney(it.price * it.qty)}
-                      </AppText>
-                      {!it.isVoided && canOrder ? (
-                        <Button
-                          label="Void"
-                          variant="dangerGhost"
-                          onPress={() => {
-                            setSelectedVoidItemIndex(idx);
-                            setSelectedVoidItem(it);
-                            setShowVoidModal(true);
-                          }}
-                          testID={`void-item-${idx}`}
-                          accessibilityLabel={`Void ${it.name}`}
-                          style={styles.voidBtn}
-                        />
-                      ) : null}
-                    </View>
-                  </View>
-                );
-              })
-            )}
-          </ScrollView>
-
-          {canSettle ? (
-            <View style={styles.footer}>
-              <Button
-                label="Settle bill"
-                size="lg"
-                // The cart bar's Review order is the main action while there are unsent items
-                variant={canOrder && cartCount > 0 ? 'secondary' : 'primary'}
-                trailing={formatMoney(runningTotal)}
-                onPress={openBilling}
-                testID="settle"
-              />
+  // Items already sent for this table, each with its own Void
+  const renderOrderedItems = (order: Order) => (
+    <ScrollView style={styles.flex} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+      {order.items.length === 0 ? (
+        <EmptyState icon="clipboard" title="Nothing ordered yet" hint="Items show here once they're sent to the kitchen." />
+      ) : (
+        order.items.map((it, idx) => {
+          const station = stationColors(it.station);
+          return (
+            <View key={idx} style={styles.orderedRow} testID={`ordered-item-${idx}`}>
+              <View style={[styles.flex, styles.orderedInfo, it.isVoided && styles.voided]}>
+                <AppText variant="bodyStrong" tone={it.isVoided ? 'muted' : 'primary'} style={it.isVoided && styles.strike}>
+                  {it.qty}× {it.name}
+                </AppText>
+                <View style={styles.badges}>
+                  <Badge label={station.short} fg={station.fg} bg={station.bg} />
+                  {it.isVoided ? <Badge label="Voided" fg={COLORS.danger} bg={COLORS.dangerBg} /> : null}
+                </View>
+                {it.notes ? (
+                  <AppText variant="caption" tone="secondary">
+                    {it.notes}
+                  </AppText>
+                ) : null}
+                {it.isVoided && it.voidReason ? (
+                  <AppText variant="caption" tone="muted">
+                    Reason: {it.voidReason}
+                  </AppText>
+                ) : null}
+              </View>
+              <View style={styles.orderedRight}>
+                <AppText
+                  variant="bodyStrong"
+                  money
+                  tone={it.isVoided ? 'muted' : 'primary'}
+                  style={it.isVoided && styles.strike}
+                >
+                  {formatMoney(it.price * it.qty)}
+                </AppText>
+                {!it.isVoided && canOrder ? (
+                  <Button
+                    label="Void"
+                    variant="dangerGhost"
+                    onPress={() => {
+                      setSelectedVoidItemIndex(idx);
+                      setSelectedVoidItem(it);
+                      setShowVoidModal(true);
+                    }}
+                    testID={`void-item-${idx}`}
+                    accessibilityLabel={`Void ${it.name}`}
+                    style={styles.voidBtn}
+                  />
+                ) : null}
+              </View>
             </View>
+          );
+        })
+      )}
+    </ScrollView>
+  );
+
+  const renderSettleFooter = () =>
+    canSettle ? (
+      <View style={styles.footer}>
+        <Button
+          label="Settle bill"
+          size="lg"
+          // The cart bar's Review order is the main action while there are unsent items
+          variant={canOrder && cartCount > 0 ? 'secondary' : 'primary'}
+          trailing={formatMoney(runningTotal)}
+          onPress={openBilling}
+          testID="settle"
+        />
+      </View>
+    ) : null;
+
+  const renderMenu = () => (
+    <View style={styles.flex}>
+      <View style={styles.searchRow}>
+        <View style={styles.search}>
+          <Feather name="search" size={18} color={COLORS.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search menu"
+            placeholderTextColor={COLORS.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            autoCorrect={false}
+            accessibilityLabel="Search menu"
+            testID="menu-search"
+          />
+          {searchQuery ? (
+            <IconButton icon="x" label="Clear search" tone="muted" onPress={() => setSearchQuery('')} testID="menu-search-clear" />
           ) : null}
         </View>
-      ) : (
-        /* Menu */
-        <View style={styles.flex}>
-          <View style={styles.searchRow}>
-            <View style={styles.search}>
-              <Feather name="search" size={18} color={COLORS.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search menu"
-                placeholderTextColor={COLORS.textMuted}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                returnKeyType="search"
-                autoCorrect={false}
-                accessibilityLabel="Search menu"
-                testID="menu-search"
+        {canStock ? (
+          <Chip label="Edit stock" selected={is86ManagerMode} onPress={() => setIs86ManagerMode((prev) => !prev)} testID="stock-mode" />
+        ) : null}
+      </View>
+
+      <ChipRow style={styles.categories}>
+        {categories.map((cat) => (
+          <Chip
+            key={cat}
+            label={cat}
+            selected={selectedCategory === cat}
+            onPress={() => setSelectedCategory(cat)}
+            testID={`category-${cat}`}
+          />
+        ))}
+      </ChipRow>
+
+      {canStock && is86ManagerMode ? (
+        <View style={styles.banner}>
+          <Banner tone="info" text="Tap a status to mark an item in or out of stock." actionLabel="Done" onAction={() => setIs86ManagerMode(false)} />
+        </View>
+      ) : null}
+
+      <FlatList
+        key={`menu-${menuGrid.columns}`}
+        data={filteredMenu}
+        keyExtractor={(item) => item.id}
+        numColumns={menuGrid.columns}
+        columnWrapperStyle={menuGrid.columns > 1 ? styles.row : undefined}
+        style={styles.flex}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        ListEmptyComponent={
+          searchQuery ? (
+            <EmptyState icon="search" title="No matches" hint={`Nothing on the menu matches "${searchQuery}".`} />
+          ) : (
+            <EmptyState icon="book-open" title="No items here" hint="Pick another category." />
+          )
+        }
+        renderItem={({ item }) => {
+          const cartItem = cart.find((x) => x.id === item.id);
+          return (
+            <View style={{ width: menuGrid.itemWidth }}>
+              <MenuItemCard
+                item={item}
+                cartItem={cartItem}
+                onAdd={addToCart}
+                onUpdateQty={updateCartQty}
+                is86ManagerMode={canStock && is86ManagerMode}
+                onToggle86={handleToggle86Item}
+                readOnly={!canOrder}
               />
-              {searchQuery ? (
-                <IconButton icon="x" label="Clear search" tone="muted" onPress={() => setSearchQuery('')} testID="menu-search-clear" />
+            </View>
+          );
+        }}
+      />
+    </View>
+  );
+
+  // Unsent items, pinned above the bottom nav
+  const cartBar = <StickyCartBar count={canOrder ? cartCount : 0} total={cartTotal} onReview={() => setShowReviewModal(true)} />;
+
+  return (
+    <View style={styles.container}>
+      {split ? (
+        // Wide screens (tablet landscape): menu on the left, the table's bill always visible on the right
+        <View style={[styles.flex, styles.split]}>
+          <View style={styles.flex}>
+            {renderMenu()}
+            {cartBar}
+          </View>
+          <View style={[styles.panel, { width: panelWidth }]} testID="bill-panel">
+            <View style={styles.top}>
+              <AppText variant="caption" tone={activeOrder ? 'secondary' : 'muted'} money numberOfLines={1} testID="order-status">
+                {statusLine}
+              </AppText>
+              {actionTiles.length > 0 ? (
+                <View style={styles.tilesWrap}>
+                  {actionTiles.map((tile) => (
+                    <View key={(tile as React.ReactElement).key} style={styles.tileCell}>
+                      {tile}
+                    </View>
+                  ))}
+                </View>
               ) : null}
             </View>
-            {canStock ? (
-              <Chip label="Edit stock" selected={is86ManagerMode} onPress={() => setIs86ManagerMode((prev) => !prev)} testID="stock-mode" />
+            {activeOrder ? (
+              <>
+                {renderOrderedItems(activeOrder)}
+                {renderSettleFooter()}
+              </>
+            ) : (
+              <EmptyState icon="file-text" title="No bill yet" hint="Items appear here once you send them to the kitchen." />
+            )}
+          </View>
+        </View>
+      ) : (
+        <>
+          {/* Table status, Menu | Ordered switch, and table actions (the Header already shows the table name) */}
+          <View style={styles.top}>
+            <AppText variant="caption" tone={activeOrder ? 'secondary' : 'muted'} money numberOfLines={1} testID="order-status">
+              {statusLine}
+            </AppText>
+
+            {activeOrder ? (
+              <Segmented<OrderView>
+                value={showRunning ? 'running' : 'menu'}
+                onChange={setActiveTab}
+                options={[
+                  { key: 'menu', label: 'Menu', testID: 'seg-menu' },
+                  { key: 'running', label: `Ordered (${liveItemCount})`, testID: 'seg-ordered' },
+                ]}
+              />
+            ) : null}
+
+            {/* Bill, Print bill, Move, Merge and Void act on the table's bill, so they live on the Ordered tab;
+                the Menu tab keeps the full height for adding items */}
+            {showRunning && actionTiles.length > 0 ? <View style={styles.tiles}>{actionTiles}</View> : null}
+
+            {/* On the Menu view, a one-line shortcut to the running bill so its actions are easy to find */}
+            {activeOrder && !showRunning ? (
+              <Pressable
+                onPress={() => setActiveTab('running')}
+                style={({ pressed }) => [styles.billBar, pressed && styles.billBarPressed]}
+                accessibilityRole="button"
+                accessibilityLabel={`Bill ${formatMoney(runningTotal)}, ${liveItemCount} items. View bill, void or settle`}
+                testID="bill-bar"
+              >
+                <Feather name="file-text" size={18} color={COLORS.gold} />
+                <AppText variant="bodyStrong" money numberOfLines={1} style={styles.flex}>
+                  Bill {formatMoney(runningTotal)} · {liveItemCount} item{liveItemCount === 1 ? '' : 's'}
+                </AppText>
+                <AppText variant="label" tone="gold">
+                  View & void
+                </AppText>
+                <Feather name="chevron-right" size={18} color={COLORS.gold} />
+              </Pressable>
             ) : null}
           </View>
 
-          <ChipRow style={styles.categories}>
-            {categories.map((cat) => (
-              <Chip
-                key={cat}
-                label={cat}
-                selected={selectedCategory === cat}
-                onPress={() => setSelectedCategory(cat)}
-                testID={`category-${cat}`}
-              />
-            ))}
-          </ChipRow>
-
-          {canStock && is86ManagerMode ? (
-            <View style={styles.banner}>
-              <Banner tone="info" text="Tap a status to mark an item in or out of stock." actionLabel="Done" onAction={() => setIs86ManagerMode(false)} />
+          {showRunning && activeOrder ? (
+            <View style={styles.flex}>
+              {renderOrderedItems(activeOrder)}
+              {renderSettleFooter()}
             </View>
-          ) : null}
-
-          <FlatList
-            key={`menu-${menuGrid.columns}`}
-            data={filteredMenu}
-            keyExtractor={(item) => item.id}
-            numColumns={menuGrid.columns}
-            columnWrapperStyle={menuGrid.columns > 1 ? styles.row : undefined}
-            style={styles.flex}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            ListEmptyComponent={
-              searchQuery ? (
-                <EmptyState icon="search" title="No matches" hint={`Nothing on the menu matches "${searchQuery}".`} />
-              ) : (
-                <EmptyState icon="book-open" title="No items here" hint="Pick another category." />
-              )
-            }
-            renderItem={({ item }) => {
-              const cartItem = cart.find((x) => x.id === item.id);
-              return (
-                <View style={{ width: menuGrid.itemWidth }}>
-                  <MenuItemCard
-                    item={item}
-                    cartItem={cartItem}
-                    onAdd={addToCart}
-                    onUpdateQty={updateCartQty}
-                    is86ManagerMode={canStock && is86ManagerMode}
-                    onToggle86={handleToggle86Item}
-                    readOnly={!canOrder}
-                  />
-                </View>
-              );
-            }}
-          />
-        </View>
+          ) : (
+            renderMenu()
+          )}
+          {cartBar}
+        </>
       )}
-
-      {/* Unsent items, pinned above the bottom nav */}
-      <StickyCartBar count={canOrder ? cartCount : 0} total={cartTotal} onReview={() => setShowReviewModal(true)} />
 
       {/* Review & send KOT */}
       <ReviewKOTModal
@@ -452,6 +525,23 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   top: { gap: SPACE.md, paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.sm },
   tiles: { flexDirection: 'row', gap: SPACE.sm },
+  billBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACE.sm,
+    minHeight: TOUCH.min,
+    paddingHorizontal: SPACE.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.goldSubtle,
+  },
+  billBarPressed: { opacity: 0.7 },
+
+  // Split layout (wide screens)
+  split: { flexDirection: 'row' },
+  panel: { backgroundColor: COLORS.bgSecondary, borderLeftWidth: 1, borderLeftColor: COLORS.borderSubtle },
+  // Up to three tiles per row so all five fit the panel
+  tilesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE.sm },
+  tileCell: { flexGrow: 1, flexBasis: '30%' },
 
   // Menu
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs },

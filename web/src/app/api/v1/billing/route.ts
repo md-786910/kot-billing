@@ -6,6 +6,7 @@ import { CASHIER_DISCOUNT_LIMIT_PERCENT } from '@/lib/auth/permissions';
 import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { OrderModel } from '@/models/Order';
+import { KOTModel } from '@/models/KOT';
 import { TableModel } from '@/models/Table';
 import { ShiftRegisterModel } from '@/models/ShiftRegister';
 import { PrivateBookingModel } from '@/models/PrivateBooking';
@@ -136,6 +137,14 @@ async function settleBill(req: NextRequest, auth: AuthContext) {
 
     await order.save();
     if (order.closed) {
+      // A paid bill means the table is done: its open tickets (and running shisha pots) leave the active lists
+      const closedKots = await KOTModel.updateMany(
+        { orderId: order._id.toString(), status: { $in: ['NEW', 'PREPARING', 'READY'] } },
+        { $set: { status: 'SERVED', servedAt: new Date() } }
+      );
+      if (closedKots.modifiedCount > 0) {
+        broadcastRealtimeEvent('KOT_STATUS_CHANGED', { orderNumber: order.orderNumber, status: 'SERVED' });
+      }
       // Receipt prints at the counter, with the room charge as billed on screen when given
       const b = body.booking;
       const billedRoom = b && typeof b.venue === 'string' && [b.rate, b.hours, b.advance].every((v: unknown) => Number.isFinite(Number(v)))

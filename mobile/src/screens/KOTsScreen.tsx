@@ -4,10 +4,11 @@ import { Alert } from '../ui/alert';
 import { KOTCard } from '../components/KOTCard';
 import { COLORS, SPACE } from '../constants/theme';
 import { useGrid } from '../hooks/useGrid';
+import { usePrintStatus } from '../hooks/usePrintStatus';
 import { usePOS } from '../context/POSContext';
 import { errorMessage } from '../services/api';
 import { requestKotReprint } from '../services/printApi';
-import { KOT, Station } from '../types';
+import { KOT, KOTStatus, Station } from '../types';
 import { Chip, ChipRow, EmptyState, Segmented } from '../ui';
 
 type Filter = 'All' | 'Kitchen' | 'Bar' | 'Shisha';
@@ -31,11 +32,12 @@ export const KOTsScreen: React.FC = () => {
   const [view, setView] = useState<Tab>('active');
   const [filter, setFilter] = useState<Filter>('All');
   const [refreshing, setRefreshing] = useState(false);
-  const [servingId, setServingId] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const canServe = can('kot.update');
-  const canReprint = can('order.create');
+  const canReprint = can('order.create') || can('kot.update');
   const [reprintingId, setReprintingId] = useState<string | null>(null);
+  const { status: printStatus } = usePrintStatus();
   const reprintingRef = useRef(false);
 
   // Keep the age badges current between data refreshes
@@ -72,12 +74,13 @@ export const KOTsScreen: React.FC = () => {
     }
   }, [refreshData]);
 
-  const markServed = async (kot: KOT) => {
-    if (servingId) return;
-    setServingId(kot.id);
-    const res = await updateKOT(kot.kotNumber ?? kot.id, 'SERVED');
-    setServingId(null);
-    if (!res.success && !res.busy) Alert.alert('Could not mark served', res.error || 'Try again.');
+  // Start → Ready → Served (or straight to Served); one update at a time so double taps don't skip a step
+  const advance = async (kot: KOT, status: KOTStatus) => {
+    if (updatingId) return;
+    setUpdatingId(kot.id);
+    const res = await updateKOT(kot.kotNumber ?? kot.id, status);
+    setUpdatingId(null);
+    if (!res.success && !res.busy) Alert.alert("Couldn't update the ticket", res.error || 'Try again.');
   };
 
   // Reprints at the counter printer; one at a time so a double tap can't print twice
@@ -88,9 +91,16 @@ export const KOTsScreen: React.FC = () => {
     const number = kot.kotNumber ?? kot.id;
     try {
       await requestKotReprint(number);
+      const station = printStatus?.station;
+      const slip = kot.status === 'CANCELLED' ? `The cancel slip for ${number}` : `The slip for ${number}`;
+      // Say plainly when the slip can't print yet, so nobody waits at the printer
       Alert.alert(
-        'Sent to the counter printer',
-        kot.status === 'CANCELLED' ? `The cancel slip for ${number} is printing at the counter.` : `${number} is printing at the counter.`
+        'Slip sent to the counter printer',
+        station && !station.configured
+          ? `${slip} is queued, but no counter printer is set. Ask the owner to choose one in Devices.`
+          : station && !station.online
+          ? `${slip} is queued. The counter printer is offline; it will print when it's back.`
+          : `${slip} is printing at the counter.`
       );
     } catch (err) {
       Alert.alert("Couldn't reprint", errorMessage(err, 'Try again.'));
@@ -137,15 +147,15 @@ export const KOTsScreen: React.FC = () => {
             <KOTCard
               kot={item}
               now={now}
-              onMarkServed={canServe ? markServed : undefined}
-              serving={servingId === item.id}
+              onAdvance={canServe ? advance : undefined}
+              updating={updatingId === item.id}
               onReprint={canReprint ? reprint : undefined}
               reprinting={reprintingId === item.id}
               reprintDisabled={!!reprintingId && reprintingId !== item.id}
             />
           </View>
         )}
-        extraData={`${now}-${servingId}-${reprintingId}`}
+        extraData={`${now}-${updatingId}-${reprintingId}`}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         refreshControl={

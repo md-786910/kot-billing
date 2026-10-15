@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, SPACE, roleLabel } from '../constants/theme';
+import { COLORS, RADIUS, SPACE, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { usePrintStatus } from '../hooks/usePrintStatus';
 import { AppText, Banner, IconButton } from '../ui';
@@ -23,6 +24,9 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const { problem, message, tone } = usePrintStatus();
   const [showQueue, setShowQueue] = useState(false);
   const insets = useSafeAreaInsets();
+  // Wide screens (tablets) show the printer warning as a pill in the header row to save height
+  const { width } = useWindowDimensions();
+  const compact = width >= 600;
   // While offline the printer status is stale, and the offline banner already explains why
   const printProblem = isConnected && problem ? message : null;
   const staffLine = currentStaff ? `${currentStaff.name} · ${roleLabel(currentStaff.role)}` : '';
@@ -39,6 +43,20 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
             {subtitle ?? staffLine}
           </AppText>
         </View>
+        {printProblem && compact ? (
+          <Pressable
+            onPress={() => setShowQueue(true)}
+            style={[styles.pill, { backgroundColor: tone === 'danger' ? COLORS.dangerBg : COLORS.warningBg }]}
+            accessibilityRole="button"
+            accessibilityLabel={`${printProblem} Open print queue`}
+            testID="printer-pill"
+          >
+            <Feather name="alert-triangle" size={16} color={tone === 'danger' ? COLORS.danger : COLORS.warning} />
+            <AppText variant="label" numberOfLines={1} style={[styles.pillText, { color: tone === 'danger' ? COLORS.danger : COLORS.warning }]}>
+              {printProblem}
+            </AppText>
+          </Pressable>
+        ) : null}
         <View>
           <IconButton
             icon="printer"
@@ -55,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
           <Banner tone="danger" text="Offline. Orders can't be sent until Wi-Fi is back." actionLabel="Retry" onAction={refreshData} />
         </View>
       )}
-      {printProblem ? (
+      {printProblem && !compact ? (
         <View style={styles.banner} testID="printer-banner">
           <Banner tone={tone} text={printProblem} actionLabel="View" onAction={() => setShowQueue(true)} />
         </View>
@@ -69,6 +87,17 @@ const styles = StyleSheet.create({
   wrap: { backgroundColor: COLORS.bgSecondary, borderBottomWidth: 1, borderBottomColor: COLORS.borderSubtle },
   header: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingLeft: SPACE.lg, paddingRight: SPACE.sm, paddingVertical: SPACE.sm },
   titles: { flex: 1 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACE.xs,
+    flexShrink: 1,
+    maxWidth: '55%',
+    paddingHorizontal: SPACE.md,
+    paddingVertical: SPACE.xs,
+    borderRadius: RADIUS.full,
+  },
+  pillText: { flexShrink: 1 },
   banner: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.md },
   dot: {
     position: 'absolute',
