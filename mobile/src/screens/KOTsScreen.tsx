@@ -7,7 +7,7 @@ import { useGrid } from '../hooks/useGrid';
 import { usePOS } from '../context/POSContext';
 import { errorMessage } from '../services/api';
 import { requestKotReprint } from '../services/printApi';
-import { KOT, Station } from '../types';
+import { KOT, KOTStatus, Station } from '../types';
 import { Chip, ChipRow, EmptyState, Segmented } from '../ui';
 
 type Filter = 'All' | 'Kitchen' | 'Bar' | 'Shisha';
@@ -31,7 +31,7 @@ export const KOTsScreen: React.FC = () => {
   const [view, setView] = useState<Tab>('active');
   const [filter, setFilter] = useState<Filter>('All');
   const [refreshing, setRefreshing] = useState(false);
-  const [servingId, setServingId] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const canServe = can('kot.update');
   const canReprint = can('order.create');
@@ -72,12 +72,13 @@ export const KOTsScreen: React.FC = () => {
     }
   }, [refreshData]);
 
-  const markServed = async (kot: KOT) => {
-    if (servingId) return;
-    setServingId(kot.id);
-    const res = await updateKOT(kot.kotNumber ?? kot.id, 'SERVED');
-    setServingId(null);
-    if (!res.success && !res.busy) Alert.alert('Could not mark served', res.error || 'Try again.');
+  // Start → Ready → Served (or straight to Served); one update at a time so double taps don't skip a step
+  const advance = async (kot: KOT, status: KOTStatus) => {
+    if (updatingId) return;
+    setUpdatingId(kot.id);
+    const res = await updateKOT(kot.kotNumber ?? kot.id, status);
+    setUpdatingId(null);
+    if (!res.success && !res.busy) Alert.alert("Couldn't update the ticket", res.error || 'Try again.');
   };
 
   // Reprints at the counter printer; one at a time so a double tap can't print twice
@@ -137,15 +138,15 @@ export const KOTsScreen: React.FC = () => {
             <KOTCard
               kot={item}
               now={now}
-              onMarkServed={canServe ? markServed : undefined}
-              serving={servingId === item.id}
+              onAdvance={canServe ? advance : undefined}
+              updating={updatingId === item.id}
               onReprint={canReprint ? reprint : undefined}
               reprinting={reprintingId === item.id}
               reprintDisabled={!!reprintingId && reprintingId !== item.id}
             />
           </View>
         )}
-        extraData={`${now}-${servingId}-${reprintingId}`}
+        extraData={`${now}-${updatingId}-${reprintingId}`}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         refreshControl={

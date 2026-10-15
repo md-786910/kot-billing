@@ -8,10 +8,10 @@ interface KOTCardProps {
   kot: KOT;
   /** Current time, ticked by the screen so the age badge stays fresh */
   now: number;
-  /** Shown only for READY tickets when the signed-in user may update tickets */
-  onMarkServed?: (kot: KOT) => void;
-  /** This ticket's "Mark served" request is running */
-  serving?: boolean;
+  /** Moves the ticket to its next step; shown when the signed-in user may update tickets */
+  onAdvance?: (kot: KOT, status: KOTStatus) => void;
+  /** This ticket's status update is running */
+  updating?: boolean;
   /** Reprint at the counter printer; shown on every ticket (cancelled ones reprint as cancel slips) */
   onReprint?: (kot: KOT) => void;
   /** This ticket's reprint request is running */
@@ -19,6 +19,13 @@ interface KOTCardProps {
   /** Another ticket's reprint is running */
   reprintDisabled?: boolean;
 }
+
+// The next step for each active ticket: New → Preparing → Ready → Served
+const NEXT_STEP: Partial<Record<KOTStatus, { status: KOTStatus; label: string; icon: 'play' | 'bell' | 'check' }>> = {
+  NEW: { status: 'PREPARING', label: 'Start', icon: 'play' },
+  PREPARING: { status: 'READY', label: 'Ready', icon: 'bell' },
+  READY: { status: 'SERVED', label: 'Mark served', icon: 'check' },
+};
 
 const STATUS: Record<KOTStatus, { label: string; fg: string; bg: string }> = {
   NEW: { label: 'New', fg: COLORS.info, bg: COLORS.infoBg },
@@ -35,7 +42,7 @@ function ageColors(minutes: number): { fg: string; bg: string } {
   return { fg: COLORS.success, bg: COLORS.successBg };
 }
 
-export const KOTCard: React.FC<KOTCardProps> = ({ kot, now, onMarkServed, serving, onReprint, reprinting, reprintDisabled }) => {
+export const KOTCard: React.FC<KOTCardProps> = ({ kot, now, onAdvance, updating, onReprint, reprinting, reprintDisabled }) => {
   const status = STATUS[kot.status] ?? STATUS.NEW;
   const station = stationColors(kot.station);
   const done = kot.status === 'SERVED' || kot.status === 'CANCELLED';
@@ -43,6 +50,9 @@ export const KOTCard: React.FC<KOTCardProps> = ({ kot, now, onMarkServed, servin
   const age = done ? { fg: COLORS.textSecondary, bg: COLORS.bgSurface } : ageColors(minutesSince(kot.createdAt, now));
   const elapsed = formatElapsed(kot.createdAt, now);
   const number = kot.kotNumber ?? kot.id;
+  const next = onAdvance ? NEXT_STEP[kot.status] : undefined;
+  // Places that don't track the kitchen can mark a ticket served straight from New or Preparing
+  const canSkipToServed = !!next && next.status !== 'SERVED';
 
   return (
     <Card accent={cancelled ? COLORS.danger : kot.status === 'READY' ? COLORS.success : undefined} testID={`kot-${number}`}>
@@ -93,17 +103,28 @@ export const KOTCard: React.FC<KOTCardProps> = ({ kot, now, onMarkServed, servin
         </AppText>
       ) : null}
 
-      {(kot.status === 'READY' && onMarkServed) || onReprint ? (
+      {next || onReprint ? (
         <View style={styles.actions}>
-          {kot.status === 'READY' && onMarkServed ? (
+          {next && onAdvance ? (
             <Button
-              label="Mark served"
-              variant="secondary"
-              icon="check"
-              onPress={() => onMarkServed(kot)}
-              loading={serving}
+              label={next.label}
+              variant={next.status === 'SERVED' ? 'secondary' : 'primary'}
+              icon={next.icon}
+              onPress={() => onAdvance(kot, next.status)}
+              loading={updating}
               style={styles.flex}
+              testID={`advance-${number}`}
+            />
+          ) : null}
+          {canSkipToServed && onAdvance ? (
+            <Button
+              label="Served"
+              variant="ghost"
+              icon="check"
+              onPress={() => onAdvance(kot, 'SERVED')}
+              disabled={updating}
               testID={`served-${number}`}
+              accessibilityLabel={`Mark ${number} served`}
             />
           ) : null}
           {onReprint ? (

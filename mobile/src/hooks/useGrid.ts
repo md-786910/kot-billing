@@ -13,10 +13,12 @@ export function useContentWidth() {
 
 /**
  * Columns for a card list: as many as fit at `minItemWidth`, so phones get one column and
- * tablets two or three (more in landscape). Re-renders on rotation.
+ * tablets two or three (more in landscape). Re-renders on rotation. Pass `availableWidth` when the
+ * list sits in a pane narrower than the screen.
  */
-export function useGrid(minItemWidth: number, padding: number, gap: number) {
-  const inner = useContentWidth() - padding * 2;
+export function useGrid(minItemWidth: number, padding: number, gap: number, availableWidth?: number) {
+  const contentWidth = useContentWidth();
+  const inner = (availableWidth ?? contentWidth) - padding * 2;
   const columns = Math.max(1, Math.floor((inner + gap) / (minItemWidth + gap)));
   const itemWidth = Math.floor((inner - gap * (columns - 1)) / columns);
   return { columns, itemWidth };
