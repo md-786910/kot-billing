@@ -3,6 +3,7 @@ import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { Alert } from '../ui/alert';
 import { KOTCard } from '../components/KOTCard';
 import { COLORS, SPACE } from '../constants/theme';
+import { useGrid } from '../hooks/useGrid';
 import { usePOS } from '../context/POSContext';
 import { errorMessage } from '../services/api';
 import { requestKotReprint } from '../services/printApi';
@@ -26,6 +27,7 @@ const time = (k: KOT) => new Date(k.createdAt).getTime() || 0;
 
 export const KOTsScreen: React.FC = () => {
   const { kots, refreshData, updateKOT, can } = usePOS();
+  const grid = useGrid(270, SPACE.lg, SPACE.md);
   const [view, setView] = useState<Tab>('active');
   const [filter, setFilter] = useState<Filter>('All');
   const [refreshing, setRefreshing] = useState(false);
@@ -125,18 +127,23 @@ export const KOTsScreen: React.FC = () => {
       </ChipRow>
 
       <FlatList
+        key={`kots-${grid.columns}`}
         data={visible}
         keyExtractor={(k) => k.id}
+        numColumns={grid.columns}
+        columnWrapperStyle={grid.columns > 1 ? styles.row : undefined}
         renderItem={({ item }) => (
-          <KOTCard
-            kot={item}
-            now={now}
-            onMarkServed={canServe ? markServed : undefined}
-            serving={servingId === item.id}
-            onReprint={canReprint ? reprint : undefined}
-            reprinting={reprintingId === item.id}
-            reprintDisabled={!!reprintingId && reprintingId !== item.id}
-          />
+          <View style={{ width: grid.itemWidth }}>
+            <KOTCard
+              kot={item}
+              now={now}
+              onMarkServed={canServe ? markServed : undefined}
+              serving={servingId === item.id}
+              onReprint={canReprint ? reprint : undefined}
+              reprinting={reprintingId === item.id}
+              reprintDisabled={!!reprintingId && reprintingId !== item.id}
+            />
+          </View>
         )}
         extraData={`${now}-${servingId}-${reprintingId}`}
         contentContainerStyle={styles.list}
@@ -167,4 +174,5 @@ const styles = StyleSheet.create({
   segment: { paddingHorizontal: SPACE.lg, paddingTop: SPACE.md },
   chips: { paddingTop: SPACE.sm },
   list: { gap: SPACE.md, paddingHorizontal: SPACE.lg, paddingTop: SPACE.sm, paddingBottom: SPACE.xxl, flexGrow: 1 },
+  row: { gap: SPACE.md },
 });

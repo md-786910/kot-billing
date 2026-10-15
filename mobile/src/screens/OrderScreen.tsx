@@ -13,6 +13,7 @@ import { MobileBillingModal } from '../components/MobileBillingModal';
 import { COLORS, RADIUS, SPACE, TOUCH, TYPE, stationColors } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { usePrintStatus } from '../hooks/usePrintStatus';
+import { useGrid } from '../hooks/useGrid';
 import { errorMessage } from '../services/api';
 import { requestBillPrint } from '../services/printApi';
 import { OrderItem, MenuItem } from '../types';
@@ -138,6 +139,8 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
 
   // Bill slip for the guest, printed at the counter (phones never print themselves)
   const { status: printStatus } = usePrintStatus();
+  // One column on phones, two or more on tablets
+  const menuGrid = useGrid(260, SPACE.lg, SPACE.sm);
   const [printingBill, setPrintingBill] = useState(false);
   const printingBillRef = useRef(false);
   const printBill = async () => {
@@ -320,8 +323,11 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
           ) : null}
 
           <FlatList
+            key={`menu-${menuGrid.columns}`}
             data={filteredMenu}
             keyExtractor={(item) => item.id}
+            numColumns={menuGrid.columns}
+            columnWrapperStyle={menuGrid.columns > 1 ? styles.row : undefined}
             style={styles.flex}
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
@@ -337,15 +343,17 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({ onOrderSuccess }) => {
             renderItem={({ item }) => {
               const cartItem = cart.find((x) => x.id === item.id);
               return (
-                <MenuItemCard
-                  item={item}
-                  cartItem={cartItem}
-                  onAdd={addToCart}
-                  onUpdateQty={updateCartQty}
-                  is86ManagerMode={canStock && is86ManagerMode}
-                  onToggle86={handleToggle86Item}
-                  readOnly={!canOrder}
-                />
+                <View style={{ width: menuGrid.itemWidth }}>
+                  <MenuItemCard
+                    item={item}
+                    cartItem={cartItem}
+                    onAdd={addToCart}
+                    onUpdateQty={updateCartQty}
+                    is86ManagerMode={canStock && is86ManagerMode}
+                    onToggle86={handleToggle86Item}
+                    readOnly={!canOrder}
+                  />
+                </View>
               );
             }}
           />
@@ -463,6 +471,7 @@ const styles = StyleSheet.create({
   categories: { paddingVertical: SPACE.sm },
   banner: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm },
   list: { gap: SPACE.sm, paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs, paddingBottom: SPACE.xxl },
+  row: { gap: SPACE.sm },
 
   // Ordered
   orderedRow: {

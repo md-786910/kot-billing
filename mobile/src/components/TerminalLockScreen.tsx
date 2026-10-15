@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Pressable, ActivityIndicator, ScrollView } from 'react-native';
-import { Alert } from '../ui/alert';
 import { Feather } from '@expo/vector-icons';
 import { COLORS, RADIUS, SPACE, roleLabel } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
@@ -48,7 +47,7 @@ const Key: React.FC<{ label: string; onPress: () => void; disabled?: boolean; ch
 );
 
 export const TerminalLockScreen: React.FC = () => {
-  const { signIn, checkAuth, device, authNotice, serverUnreachable, markServerReachable, changeServer } = usePOS();
+  const { signIn, checkAuth, device, authNotice, markServerReachable } = usePOS();
 
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
@@ -92,16 +91,6 @@ export const TerminalLockScreen: React.FC = () => {
   const retry = () => {
     if (!device) void checkAuth();
     loadStaff();
-  };
-
-  // Server unreachable, wrong address or failing: offer a way out (re-pair with a new address)
-  const canChangeServer = serverUnreachable || (!!staffError && staffError.status !== 401 && staffError.status !== 429);
-
-  const confirmChangeServer = () => {
-    Alert.alert('Change server address?', 'This phone will be unpaired. You will need a new pairing code from Staff & Devices.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer() },
-    ]);
   };
 
   // Functional updates so quick taps never drop digits
@@ -169,16 +158,6 @@ export const TerminalLockScreen: React.FC = () => {
               <View style={styles.stack}>
                 <Banner tone="danger" text={staffError.message} />
                 <Button label="Retry" variant="secondary" icon="refresh-cw" onPress={retry} fullWidth testID="staff-retry" />
-                {canChangeServer ? (
-                  <Button
-                    label="Change server address"
-                    variant="ghost"
-                    icon="server"
-                    onPress={confirmChangeServer}
-                    fullWidth
-                    testID="change-server"
-                  />
-                ) : null}
               </View>
             ) : staff.length === 0 ? (
               <View style={styles.stack}>

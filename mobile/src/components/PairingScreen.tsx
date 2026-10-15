@@ -1,30 +1,28 @@
 import React, { useRef, useState } from 'react';
 import { StyleSheet, View, TextInput, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
-import { COLORS, RADIUS, SERVER_URL_PLACEHOLDER, SPACE, TOUCH, TYPE } from '../constants/theme';
+import { COLORS, RADIUS, SPACE, TOUCH, TYPE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { useCooldown } from '../hooks/useCooldown';
 import { AppText, Banner, Button } from '../ui';
 import { LogoMark } from './PrivacyCover';
 
 export const PairingScreen: React.FC = () => {
-  const { pair, serverUrl, authNotice } = usePOS();
-  const [url, setUrl] = useState(serverUrl);
+  const { pair, authNotice } = usePOS();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   // Set synchronously: the button and the keyboard's Done key could otherwise both submit the code
   const pairingRef = useRef(false);
-  const codeRef = useRef<TextInput>(null);
   const cooldown = useCooldown();
 
-  const canPair = url.trim().length > 0 && code.length === 6 && !pairing && !cooldown.active;
+  const canPair = code.length === 6 && !pairing && !cooldown.active;
 
   const handlePair = async () => {
     if (!canPair || pairingRef.current) return;
     pairingRef.current = true;
     setPairing(true);
     setError(null);
-    const res = await pair(url, code);
+    const res = await pair(code);
     // On success the app moves on to the lock screen and this unmounts
     if (!res.success) {
       pairingRef.current = false;
@@ -54,36 +52,9 @@ export const PairingScreen: React.FC = () => {
 
           <View style={styles.field}>
             <AppText variant="label" tone="secondary">
-              Server address
-            </AppText>
-            <TextInput
-              style={styles.input}
-              value={url}
-              onChangeText={(t) => {
-                setUrl(t);
-                setError(null);
-              }}
-              placeholder={SERVER_URL_PLACEHOLDER}
-              placeholderTextColor={COLORS.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              textContentType="URL"
-              returnKeyType="next"
-              onSubmitEditing={() => codeRef.current?.focus()}
-              submitBehavior="submit"
-              editable={!pairing}
-              accessibilityLabel="Server address"
-              testID="pair-server"
-            />
-          </View>
-
-          <View style={styles.field}>
-            <AppText variant="label" tone="secondary">
               Pairing code
             </AppText>
             <TextInput
-              ref={codeRef}
               style={[styles.input, styles.codeInput]}
               value={code}
               onChangeText={(t) => {

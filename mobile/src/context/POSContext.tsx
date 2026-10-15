@@ -27,9 +27,7 @@ import {
   signInWithPin,
   logoutSession,
   changeOwnPin,
-  normalizeServerUrl,
-  getServerBaseUrl,
-  setServerBaseUrl,
+  SERVER_URL,
   getDeviceToken,
   setDeviceToken,
   getSessionToken,
@@ -72,13 +70,6 @@ interface POSContextType {
   // Connectivity & Server
   isConnected: boolean;
   serverUrl: string;
-  /**
-   * Forget this phone's pairing and go to the pairing screen (optionally pre-filling a new address).
-   * A device token is never sent to a different server.
-   */
-  changeServer: (newUrl?: string) => Promise<void>;
-  /** The last auth check could not use the server (unreachable, wrong address, server error) */
-  serverUnreachable: boolean;
   /** Called when a server call succeeds from the lock screen */
   markServerReachable: () => void;
   /** True while the app is not in the foreground (iOS app switcher): screens hide behind a plain cover */
@@ -97,7 +88,7 @@ interface POSContextType {
   /** Why the app is on the pairing/lock screen (e.g. session ended, server unreachable) */
   authNotice: string | null;
   checkAuth: () => Promise<void>;
-  pair: (serverUrl: string, code: string) => Promise<ActionResult>;
+  pair: (code: string) => Promise<ActionResult>;
   signIn: (userId: string, pin: string) => Promise<ActionResult>;
   lock: (reason?: string) => void;
   unpair: () => Promise<ActionResult>;
@@ -169,7 +160,6 @@ async function persistDeviceToken(token: string | null) {
 }
 
 const NOT_PAIRED_NOTICE = "This phone isn't paired with the server. Enter a new pairing code.";
-const CHANGE_SERVER_NOTICE = 'Enter the server address and a new pairing code from Staff & Devices.';
 const BUSY_MESSAGE = 'Still working on the last action. Please wait.';
 
 type Notice = { text: string; /** connection/server trouble: cleared once the server answers again */ network: boolean };
@@ -180,7 +170,6 @@ function isForeground(state: string | null | undefined) {
 
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
-  const [serverUrl, setServerUrlState] = useState('');
   const [loading, setLoading] = useState(false);
   const [pingStats, setPingStats] = useState<PingStats | null>(null);
 
@@ -190,7 +179,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [serverUnreachable, setServerUnreachable] = useState(false);
   const [appActive, setAppActive] = useState(() => isForeground(AppState.currentState));
 
   // Restaurant Data
@@ -248,7 +236,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSessionToken(null);
       setDeviceToken(null);
       setDevice(null);
-      setServerUnreachable(false);
       setNotice(text ? { text, network: false } : null);
       setAuthStatus('unpaired');
       await writeStored('deviceToken', null);
@@ -257,7 +244,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const markServerReachable = useCallback(() => {
-    setServerUnreachable(false);
     setIsConnected(true);
     setNotice((n) => (n?.network ? null : n));
   }, []);
@@ -267,7 +253,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * Never unlocks: only a PIN sign-in opens the app.
    */
   const checkAuth = useCallback(async () => {
-    if (!getServerBaseUrl() || !getDeviceToken()) {
+    if (!getDeviceToken()) {
       setDevice(null);
       setAuthStatus('unpaired');
       return;
@@ -296,9 +282,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAuthStatus((s) => (s === 'ready' ? s : 'locked'));
     } catch (err) {
       if (isStale()) return;
-      // Stay paired so we can retry; the lock screen offers to change the server address
+      // Stay paired so we can retry from the lock screen
       setIsConnected(false);
-      setServerUnreachable(true);
       setNotice({ text: errorMessage(err), network: true });
       setAuthStatus((s) => (s === 'ready' ? s : 'locked'));
     }
@@ -310,9 +295,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     (async () => {
       const stored = await readAllStored();
       if (cancelled) return;
-      setServerBaseUrl(stored.serverUrl ?? '');
-      setServerUrlState(getServerBaseUrl());
-      setDeviceToken(stored.deviceToken);
+      // A token paired with another server (older versions let each phone choose) is never sent here
+      const pairedElsewhere = !!stored.legacyServerUrl && stored.legacyServerUrl !== SERVER_URL;
+      if (stored.legacyServerUrl) void writeStored('legacyServerUrl', null);
+      if (pairedElsewhere) void writeStored('deviceToken', null);
+      setDeviceToken(pairedElsewhere ? null : stored.deviceToken);
       setSessionToken(null);
       if (stored.legacySessionToken) {
         // Older versions kept the staff session on disk: revoke it on the server and never resume it
@@ -417,14 +404,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ---------- Pairing & sign-in ----------
 
-  const pair = useCallback(async (url: string, code: string): Promise<ActionResult> => {
-    const normalized = normalizeServerUrl(url);
-    if (!normalized) return { success: false, error: 'Enter the server address' };
+  const pair = useCallback(async (code: string): Promise<ActionResult> => {
     if (!/^\d{6}$/.test(code)) return { success: false, error: 'Enter the 6-digit pairing code' };
 
-    setServerBaseUrl(normalized);
-    setServerUrlState(normalized);
-    await writeStored('serverUrl', normalized);
     // A new pairing replaces any old tokens
     setSessionToken(null);
     await persistDeviceToken(null);
@@ -442,7 +424,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       setDevice(result.device);
       setIsConnected(true);
-      setServerUnreachable(false);
       setNotice(null);
       setAuthStatus('locked');
       return { success: true };
@@ -467,7 +448,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentStaff(me.user);
         setPermissions(me.permissions);
         setNotice(null);
-        setServerUnreachable(false);
         setIsConnected(true);
         lastActivityRef.current = Date.now();
         setAuthStatus('ready');
@@ -513,25 +493,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return failure(err);
     }
   }, []);
-
-  const changeServer = useCallback(
-    async (newUrl?: string) => {
-      // Last calls to the old server (they read its address and tokens before anything below runs):
-      // end the staff session and revoke this device there. Best effort: it may be unreachable.
-      const token = getSessionToken();
-      if (token) logoutSession(token).catch(() => {});
-      if (getDeviceToken()) unpairDevice(5_000).catch(() => {});
-
-      const next = newUrl ? normalizeServerUrl(newUrl) : '';
-      if (next) {
-        setServerBaseUrl(next);
-        setServerUrlState(next);
-      }
-      await forgetDevice(CHANGE_SERVER_NOTICE);
-      if (next) await writeStored('serverUrl', next);
-    },
-    [forgetDevice]
-  );
 
   const can = useCallback((permission: Permission) => permissions.includes(permission), [permissions]);
 
@@ -717,9 +678,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <POSContext.Provider
       value={{
         isConnected,
-        serverUrl,
-        changeServer,
-        serverUnreachable,
+        serverUrl: SERVER_URL,
         markServerReachable,
         privacyCover: !appActive,
         loading,

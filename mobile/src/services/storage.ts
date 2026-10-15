@@ -2,7 +2,8 @@ import * as SecureStore from 'expo-secure-store';
 
 // Keys may only contain letters, numbers, ".", "-" and "_"
 const KEYS = {
-  serverUrl: 'layali.serverUrl',
+  // Older versions let each phone choose its server; read once at boot to delete it
+  legacyServerUrl: 'layali.serverUrl',
   deviceToken: 'layali.deviceToken',
   // Staff sessions now live in memory only; this key is read once at boot to revoke and delete
   // a token left behind by older app versions.
@@ -38,10 +39,10 @@ export async function writeStored(key: StoredKey, value: string | null): Promise
 }
 
 export async function readAllStored() {
-  const [serverUrl, deviceToken, legacySessionToken] = await Promise.all([
-    readStored('serverUrl'),
+  const [legacyServerUrl, deviceToken, legacySessionToken] = await Promise.all([
+    readStored('legacyServerUrl'),
     readStored('deviceToken'),
     readStored('legacySessionToken'),
   ]);
-  return { serverUrl, deviceToken, legacySessionToken };
+  return { legacyServerUrl, deviceToken, legacySessionToken };
 }

@@ -3,6 +3,7 @@ import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { Alert } from '../ui/alert';
 import { ShishaCard, shishaMinutesLeft } from '../components/ShishaCard';
 import { COLORS, SPACE } from '../constants/theme';
+import { useGrid } from '../hooks/useGrid';
 import { usePOS } from '../context/POSContext';
 import { KOT } from '../types';
 import { EmptyState } from '../ui';
@@ -11,6 +12,7 @@ const TICK_MS = 15_000;
 
 export const ShishaScreen: React.FC = () => {
   const { kots, extendShisha, refreshData, can } = usePOS();
+  const grid = useGrid(270, SPACE.lg, SPACE.md);
   const canExtend = can('shisha.manage');
   const [now, setNow] = useState(() => Date.now());
   const [refreshing, setRefreshing] = useState(false);
@@ -53,10 +55,15 @@ export const ShishaScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <FlatList
+        key={`shisha-${grid.columns}`}
         data={pots}
         keyExtractor={(k) => k.id}
+        numColumns={grid.columns}
+        columnWrapperStyle={grid.columns > 1 ? styles.row : undefined}
         renderItem={({ item }) => (
-          <ShishaCard pot={item} now={now} onExtend={canExtend ? handleExtend : undefined} extending={extendingId === item.id} />
+          <View style={{ width: grid.itemWidth }}>
+            <ShishaCard pot={item} now={now} onExtend={canExtend ? handleExtend : undefined} extending={extendingId === item.id} />
+          </View>
         )}
         extraData={`${now}-${extendingId}`}
         contentContainerStyle={styles.list}
@@ -79,4 +86,5 @@ export const ShishaScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bgPrimary },
   list: { gap: SPACE.md, padding: SPACE.lg, paddingBottom: SPACE.xxl, flexGrow: 1 },
+  row: { gap: SPACE.md },
 });

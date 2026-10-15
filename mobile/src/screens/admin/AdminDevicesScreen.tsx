@@ -259,7 +259,7 @@ function PairSheet({ visible, onClose, onDone }: { visible: boolean; onClose: ()
         <AppText variant="body" tone="secondary">
           {type === 'TERMINAL'
             ? 'On the counter computer, open the POS and enter this code.'
-            : 'On the staff phone, open this app and enter this code with the server address.'}
+            : 'On the staff phone, open this app and enter this code.'}
         </AppText>
         <View style={styles.codeBox}>
           <AppText variant="display" tone="gold" money selectable style={styles.code} testID="pair-code" accessibilityLabel={`Code ${code.code.split('').join(' ')}`}>

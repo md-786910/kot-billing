@@ -37,7 +37,7 @@ const PinField: React.FC<{
 );
 
 export const SettingsScreen: React.FC = () => {
-  const { currentStaff, device, serverUrl, changeServer, isConnected, pingStats, runPingTest, changePin, lock, unpair } = usePOS();
+  const { currentStaff, device, serverUrl, isConnected, pingStats, runPingTest, changePin, lock, unpair } = usePOS();
 
   // Change PIN
   const [currentPin, setCurrentPin] = useState('');
@@ -89,18 +89,6 @@ export const SettingsScreen: React.FC = () => {
     setIsTestingPing(true);
     await runPingTest();
     setIsTestingPing(false);
-  };
-
-  // The new address is entered on the pairing screen, together with a new pairing code
-  const handleChangeServer = () => {
-    Alert.alert(
-      'Change server address?',
-      'This phone will be unpaired and signed out. You will need a new pairing code from Staff & Devices.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Change and unpair', style: 'destructive', onPress: () => void changeServer() },
-      ]
-    );
   };
 
   const handleUnpair = () => {
@@ -181,10 +169,9 @@ export const SettingsScreen: React.FC = () => {
             Address
           </AppText>
           <AppText variant="body" tone="secondary" selectable>
-            {serverUrl || 'Not set'}
+            {serverUrl}
           </AppText>
         </View>
-        <Button label="Change server" variant="secondary" onPress={handleChangeServer} fullWidth testID="server-change" />
       </Card>
 
       {/* This phone */}

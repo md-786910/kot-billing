@@ -1,5 +1,6 @@
 import React from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SPACE } from '../constants/theme';
 import { usePOS } from '../context/POSContext';
 import { PrivacyCover } from '../components/PrivacyCover';
@@ -30,17 +31,19 @@ export function Sheet({
   testID?: string;
 }) {
   const { markActivity } = usePOS();
+  const insets = useSafeAreaInsets();
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.overlay} onTouchStart={markActivity}>
+        {/* Drawn edge to edge: the sheet keeps clear of the status bar and ends above the navigation bar */}
+        <View style={[styles.overlay, { paddingTop: insets.top }]} onTouchStart={markActivity}>
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={dismissOnBackdrop ? onClose : undefined}
             accessibilityElementsHidden
             importantForAccessibility="no"
           />
-          <View style={styles.sheet} testID={testID} accessibilityViewIsModal>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom }]} testID={testID} accessibilityViewIsModal>
             <View style={styles.grabber} />
             <View style={styles.header}>
               <View style={styles.flex}>
@@ -76,6 +79,10 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
   sheet: {
+    width: '100%',
+    // Centred and not stretched across a landscape tablet
+    maxWidth: 640,
+    alignSelf: 'center',
     maxHeight: '92%',
     backgroundColor: COLORS.bgSecondary,
     borderTopLeftRadius: RADIUS.xl,
